@@ -1,11 +1,18 @@
-import "dotenv/config";
+import { config as loadEnv } from "dotenv";
+import path from "node:path";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { teams } from "../apps/web/lib/schema";
 
+// Load env from apps/web/.env.local (where DATABASE_URL is configured)
+loadEnv({ path: path.join(__dirname, "..", "apps", "web", ".env.local") });
+loadEnv(); // also load root .env if present
+
 const url = process.env.POSTGRES_URL ?? process.env.DATABASE_URL;
 if (!url) {
-  console.error("POSTGRES_URL veya DATABASE_URL set edilmeli (apps/web/.env.local).");
+  console.error(
+    "POSTGRES_URL veya DATABASE_URL set edilmeli (apps/web/.env.local içine koy)."
+  );
   process.exit(1);
 }
 

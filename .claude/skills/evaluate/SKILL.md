@@ -1,5 +1,5 @@
 ---
-name: evaluate-repo
+name: evaluate
 description: Hackathon takım reposunu klonla, 4 sub-agent'la paralel değerlendir, sonucu Vercel API'ye POST et. Kullanım. /evaluate <repo-url> team-id=<id>
 ---
 
