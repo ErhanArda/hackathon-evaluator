@@ -1,0 +1,23 @@
+apps/web/components/QueuePanel.tsx
+  s_7c0535ebf77492::t_4e953795814e93 1-141
+apps/web/app/api/eval-requests/route.ts
+  s_7c0535ebf77492::t_b232fb2ef88e2f 3,11,16-20
+apps/web/app/admin/page.tsx
+  s_7c0535ebf77492::t_0cd1663890439e 2,26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "c336e2013361e4ca82172c7008d1cee642d7f033",
+  "prompts": {},
+  "sessions": {
+    "s_7c0535ebf77492": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c0a0e3b1-5e69-4a88-b804-0b06d808cb92",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
