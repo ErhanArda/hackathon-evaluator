@@ -1,0 +1,24 @@
+apps/web/drizzle.config.ts
+  s_7c0535ebf77492::t_6b19c769d04ab1 1-2,5-8,15
+apps/web/scripts/seed-teams.ts
+  s_7c0535ebf77492::t_ad977e8efcbe8a 5,7-9
+apps/web/package.json
+  s_7c0535ebf77492::t_1566f8dd817d91 10
+  s_7c0535ebf77492::t_866685eb2bb171 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "10deb3c5b7129ef91ad8d4399659b077785c9986",
+  "prompts": {},
+  "sessions": {
+    "s_7c0535ebf77492": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c0a0e3b1-5e69-4a88-b804-0b06d808cb92",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
