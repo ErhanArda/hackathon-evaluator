@@ -43,6 +43,8 @@ export const evalRequests = pgTable("eval_requests", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
   evaluationId: text("evaluation_id"),
   errorMsg: text("error_msg"),
+  // per-agent live state: { analist: {status, startedAt, completedAt}, developer: ..., reviewer: ..., 'ai-evidence': ... }
+  agentStates: jsonb("agent_states"),
 });
 
 export type Team = typeof teams.$inferSelect;

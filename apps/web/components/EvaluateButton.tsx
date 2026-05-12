@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Status = "idle" | "queued" | "processing" | "done" | "failed";
+type AgentStatus = "pending" | "running" | "done" | "failed";
+type AgentStateMap = Record<
+  string,
+  { status?: AgentStatus; startedAt?: string; completedAt?: string; score?: number; note?: string } | undefined
+>;
 
 const AGENTS = [
   { key: "analist",     label: "Analist",      desc: "docs + readme"        },
@@ -34,6 +39,7 @@ export function EvaluateButton({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState<number>(() => Date.now());
+  const [agentStates, setAgentStates] = useState<AgentStateMap>({});
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const command = `/evaluate ${repoUrl} team-id=${teamId}`;
@@ -55,6 +61,7 @@ export function EvaluateButton({
           setRequestId(latest.id);
           setStatus(latest.status === "pending" ? "queued" : "processing");
           if (latest.requestedAt) setStartedAt(new Date(latest.requestedAt).getTime());
+          if (latest.agentStates) setAgentStates(latest.agentStates as AgentStateMap);
         }
       } catch {
         /* ignore */
@@ -90,6 +97,7 @@ export function EvaluateButton({
             ? "queued"
             : (data.request.status as Status);
         setStatus(s);
+        if (data.request.agentStates) setAgentStates(data.request.agentStates as AgentStateMap);
         if (s === "done") {
           if (pollRef.current) clearInterval(pollRef.current);
           router.refresh();
@@ -221,31 +229,41 @@ export function EvaluateButton({
           </div>
 
           <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {AGENTS.map((a) => (
-              <li
-                key={a.key}
-                className={`rounded-md border p-2 text-xs ${
-                  status === "processing"
-                    ? "border-amber-300 bg-amber-50 text-amber-900"
-                    : "border-slate-200 bg-slate-50 text-slate-500"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{a.label}</span>
-                  {status === "processing" ? (
-                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-                  ) : (
-                    <span className="inline-block h-2 w-2 rounded-full bg-slate-300" />
-                  )}
-                </div>
-                <div className="mt-0.5 truncate text-[11px] opacity-70">{a.desc}</div>
-              </li>
-            ))}
+            {AGENTS.map((a) => {
+              const s = agentStates[a.key]?.status ?? "pending";
+              const score = agentStates[a.key]?.score;
+              const cls =
+                s === "done"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                  : s === "running"
+                  ? "border-amber-300 bg-amber-50 text-amber-900"
+                  : s === "failed"
+                  ? "border-rose-300 bg-rose-50 text-rose-900"
+                  : "border-slate-200 bg-slate-50 text-slate-500";
+              const icon =
+                s === "done" ? "✓" : s === "failed" ? "✗" : s === "running" ? null : null;
+              return (
+                <li key={a.key} className={`rounded-md border p-2 text-xs ${cls}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{a.label}</span>
+                    {icon ? (
+                      <span className="text-sm font-bold">{icon}</span>
+                    ) : s === "running" ? (
+                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                    ) : (
+                      <span className="inline-block h-2 w-2 rounded-full bg-slate-300" />
+                    )}
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px] opacity-70">
+                    {s === "done" && score != null ? `${score}/5 · ${a.desc}` : a.desc}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
 
           <p className="text-[11px] text-slate-400">
-            * Sub-agent'lar gerçek zamanlı bağımsız çalışır; tek tek bittiklerini bekleyemiyoruz, hepsi
-            tamamlanınca skor toplu güncellenir.
+            * Her sub-agent başlarken/biterken bağımsız DB'ye yazar; canlı tikler.
           </p>
         </div>
       )}
