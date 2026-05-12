@@ -4,6 +4,7 @@ import { getTeamDetail } from "@/lib/queries";
 import { isDbConfigured } from "@/lib/db";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { SetupBanner } from "@/components/SetupBanner";
+import { EvaluateButton } from "@/components/EvaluateButton";
 import { CRITERIA, TOTAL_MAX } from "@/lib/criteria";
 import { normalize100 } from "@/lib/scoring";
 
@@ -55,9 +56,15 @@ export default async function TeamDetail({
         )}
       </div>
 
+      <EvaluateButton
+        teamId={detail.team.id}
+        repoUrl={detail.team.repoUrl}
+        hasEvaluation={!!latest}
+      />
+
       {!latest ? (
         <div className="rounded-lg border border-dashed border-slate-300 p-12 text-center text-slate-500">
-          Henüz değerlendirilmedi. Operator <code className="rounded bg-slate-100 px-1">/evaluate</code> ile çalıştırabilir.
+          Henüz değerlendirilmedi. Yukarıdaki butonla komutu kopyala, Claude Code'a yapıştır.
         </div>
       ) : (
         <>
