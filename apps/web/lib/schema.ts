@@ -33,8 +33,20 @@ export const aiRationales = pgTable("ai_rationales", {
   evidence: jsonb("evidence"),
 });
 
+export const evalRequests = pgTable("eval_requests", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("pending"), // pending | processing | done | failed
+  requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  evaluationId: text("evaluation_id"),
+  errorMsg: text("error_msg"),
+});
+
 export type Team = typeof teams.$inferSelect;
 export type NewTeam = typeof teams.$inferInsert;
 export type Evaluation = typeof evaluations.$inferSelect;
 export type CriterionScore = typeof criterionScores.$inferSelect;
 export type AiRationale = typeof aiRationales.$inferSelect;
+export type EvalRequest = typeof evalRequests.$inferSelect;
