@@ -5,6 +5,20 @@ import { useRouter } from "next/navigation";
 
 type Status = "idle" | "queued" | "processing" | "done" | "failed";
 
+const AGENTS = [
+  { key: "analist",     label: "Analist",      desc: "docs + readme"        },
+  { key: "developer",   label: "Developer",    desc: "temiz kod (context7)" },
+  { key: "reviewer",    label: "Reviewer",     desc: "mimari (context7)"    },
+  { key: "ai-evidence", label: "AI Evidence",  desc: "agentic + AI izleri"  },
+] as const;
+
+function formatElapsed(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const min = Math.floor(total / 60);
+  const sec = total % 60;
+  return min > 0 ? `${min}d ${sec.toString().padStart(2, "0")}s` : `${sec}s`;
+}
+
 export function EvaluateButton({
   teamId,
   repoUrl,
@@ -18,11 +32,14 @@ export function EvaluateButton({
   const [status, setStatus] = useState<Status>("idle");
   const [requestId, setRequestId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState<number>(() => Date.now());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const command = `/evaluate ${repoUrl} team-id=${teamId}`;
   const [copied, setCopied] = useState(false);
 
-  // Check if there's already a pending request for this team on mount
+  // Mount: pick up any existing request for this team
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -37,6 +54,7 @@ export function EvaluateButton({
         if (latest.status === "pending" || latest.status === "processing") {
           setRequestId(latest.id);
           setStatus(latest.status === "pending" ? "queued" : "processing");
+          if (latest.requestedAt) setStartedAt(new Date(latest.requestedAt).getTime());
         }
       } catch {
         /* ignore */
@@ -47,7 +65,19 @@ export function EvaluateButton({
     };
   }, [teamId]);
 
-  // Poll while queued/processing
+  // Elapsed time ticker (1s)
+  useEffect(() => {
+    if (status !== "queued" && status !== "processing") {
+      if (tickerRef.current) clearInterval(tickerRef.current);
+      return;
+    }
+    tickerRef.current = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      if (tickerRef.current) clearInterval(tickerRef.current);
+    };
+  }, [status]);
+
+  // Status polling (3s)
   useEffect(() => {
     if (!requestId || (status !== "queued" && status !== "processing")) return;
     pollRef.current = setInterval(async () => {
@@ -80,6 +110,7 @@ export function EvaluateButton({
   async function trigger() {
     setStatus("queued");
     setErrorMsg(null);
+    setStartedAt(Date.now());
     try {
       const r = await fetch("/api/eval-requests", {
         method: "POST",
@@ -110,18 +141,16 @@ export function EvaluateButton({
   }
 
   const isBusy = status === "queued" || status === "processing";
-  const buttonLabel =
-    status === "queued"
-      ? "⏳ Sıraya alındı..."
-      : status === "processing"
-      ? "🔄 Sub-agent'lar çalışıyor..."
-      : status === "done"
-      ? "✓ Tamamlandı"
-      : status === "failed"
-      ? "✗ Hata — tekrar dene"
-      : hasEvaluation
-      ? "🤖 Yeniden değerlendir"
-      : "🤖 Değerlendir";
+  const elapsed = startedAt ? now - startedAt : 0;
+  const buttonLabel = isBusy
+    ? `⏱ ${formatElapsed(elapsed)}`
+    : status === "done"
+    ? "✓ Tamamlandı"
+    : status === "failed"
+    ? "✗ Tekrar dene"
+    : hasEvaluation
+    ? "🤖 Yeniden değerlendir"
+    : "🤖 Değerlendir";
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -131,8 +160,8 @@ export function EvaluateButton({
             {hasEvaluation ? "Yeniden değerlendir" : "Değerlendir"}
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            Tıklayınca kuyruğa eklenir; aktif Claude Code worker'ı (otomatik /process-queue) 30-60 sn içinde
-            4 sub-agent'ı paralel koşturur ve sayfa otomatik yenilenir.
+            4 sub-agent paralel çalışır. <strong>Küçük repo: 30-90 sn · Büyük repo: 2-5 dk.</strong> Süre, repo
+            boyutuna göre değişir (analist/developer dosyaları gerçekten okur).
           </p>
         </div>
         <button
@@ -144,12 +173,47 @@ export function EvaluateButton({
         </button>
       </div>
 
-      {(status === "queued" || status === "processing") && (
-        <div className="mt-3 rounded-md bg-amber-50 p-2 text-xs text-amber-900">
-          {status === "queued"
-            ? "Worker'ın bu request'i alması bekleniyor (genelde <5 sn)..."
-            : "4 sub-agent paralel çalışıyor (analist + developer + reviewer + ai-evidence)..."}
-          {requestId && <span className="ml-2 font-mono opacity-70">{requestId}</span>}
+      {isBusy && (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-baseline justify-between text-xs text-slate-600">
+            <span>
+              {status === "queued"
+                ? "⏳ Worker bekleniyor (cron her dakika)"
+                : "🔄 Sub-agent'lar koşuyor — paralel"}
+            </span>
+            <span className="font-mono text-slate-500">
+              elapsed: {formatElapsed(elapsed)}
+              {requestId && <span className="ml-2 opacity-60">{requestId}</span>}
+            </span>
+          </div>
+
+          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {AGENTS.map((a) => (
+              <li
+                key={a.key}
+                className={`rounded-md border p-2 text-xs ${
+                  status === "processing"
+                    ? "border-amber-300 bg-amber-50 text-amber-900"
+                    : "border-slate-200 bg-slate-50 text-slate-500"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{a.label}</span>
+                  {status === "processing" ? (
+                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                  ) : (
+                    <span className="inline-block h-2 w-2 rounded-full bg-slate-300" />
+                  )}
+                </div>
+                <div className="mt-0.5 truncate text-[11px] opacity-70">{a.desc}</div>
+              </li>
+            ))}
+          </ul>
+
+          <p className="text-[11px] text-slate-400">
+            * Sub-agent'lar gerçek zamanlı bağımsız çalışır; tek tek bittiklerini bekleyemiyoruz, hepsi
+            tamamlanınca skor toplu güncellenir.
+          </p>
         </div>
       )}
 
