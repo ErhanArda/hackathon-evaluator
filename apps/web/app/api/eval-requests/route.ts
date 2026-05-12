@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -8,12 +8,16 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const status = searchParams.get("status");
+  const status = searchParams.get("status"); // 'pending' | 'processing' | 'done' | 'failed' | 'active'
   const teamId = searchParams.get("teamId");
   const limit = Math.min(Number(searchParams.get("limit") ?? "50"), 200);
 
   const conditions = [];
-  if (status) conditions.push(eq(schema.evalRequests.status, status));
+  if (status === "active") {
+    conditions.push(inArray(schema.evalRequests.status, ["pending", "processing"]));
+  } else if (status) {
+    conditions.push(eq(schema.evalRequests.status, status));
+  }
   if (teamId) conditions.push(eq(schema.evalRequests.teamId, teamId));
 
   const rows = await db
