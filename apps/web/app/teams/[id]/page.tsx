@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTeamDetail } from "@/lib/queries";
+import { isDbConfigured } from "@/lib/db";
 import { ScoreBadge } from "@/components/ScoreBadge";
-import { CRITERIA, labelFor, TOTAL_MAX } from "@/lib/criteria";
+import { SetupBanner } from "@/components/SetupBanner";
+import { CRITERIA, TOTAL_MAX } from "@/lib/criteria";
 import { normalize100 } from "@/lib/scoring";
 
 export const dynamic = "force-dynamic";
@@ -13,12 +15,20 @@ export default async function TeamDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  let detail;
+  if (!isDbConfigured()) {
+    return (
+      <div className="space-y-6">
+        <Link href="/" className="text-sm text-slate-500 hover:underline">← Leaderboard</Link>
+        <SetupBanner />
+      </div>
+    );
+  }
+
+  let detail: Awaited<ReturnType<typeof getTeamDetail>> = null;
   try {
     detail = await getTeamDetail(id);
   } catch (err) {
     console.error("[team-detail] failed:", err);
-    detail = null;
   }
   if (!detail) notFound();
 

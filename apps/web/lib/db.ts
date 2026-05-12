@@ -4,13 +4,17 @@ import * as schema from "./schema";
 
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
+export function isDbConfigured(): boolean {
+  return Boolean(process.env.POSTGRES_URL ?? process.env.DATABASE_URL);
+}
+
 function getDb() {
   if (_db) return _db;
   const connectionString =
     process.env.POSTGRES_URL ?? process.env.DATABASE_URL ?? "";
   if (!connectionString) {
     throw new Error(
-      "POSTGRES_URL/DATABASE_URL not set. Set it in .env.local or in Vercel env vars."
+      "POSTGRES_URL/DATABASE_URL not set. Set it in apps/web/.env.local or in Vercel env vars."
     );
   }
   const client = postgres(connectionString, { prepare: false, max: 5 });

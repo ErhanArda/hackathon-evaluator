@@ -1,21 +1,28 @@
 import { LeaderboardTable } from "@/components/LeaderboardTable";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { SetupBanner } from "@/components/SetupBanner";
 import { getLeaderboard } from "@/lib/queries";
+import { isDbConfigured } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-async function safeLeaderboard() {
+export default async function Home() {
+  if (!isDbConfigured()) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Leaderboard</h1>
+        <SetupBanner />
+      </div>
+    );
+  }
+
+  let rows: Awaited<ReturnType<typeof getLeaderboard>> = [];
   try {
-    return await getLeaderboard();
+    rows = await getLeaderboard();
   } catch (err) {
     console.error("[leaderboard] failed:", err);
-    return [];
   }
-}
-
-export default async function Home() {
-  const rows = await safeLeaderboard();
   const evaluated = rows.filter((r) => r.totalScore != null).length;
 
   return (
