@@ -14,14 +14,14 @@ export async function getLeaderboard(): Promise<LeaderRow[]> {
   const teams = await db.select().from(schema.teams).orderBy(schema.teams.name);
   if (teams.length === 0) return [];
 
-  const latest = await db.execute(sql`
-    SELECT DISTINCT ON (team_id) *
-    FROM evaluations
-    ORDER BY team_id, created_at DESC
-  `);
+  // Fetch all evaluations, dedupe latest per team in JS (avoids raw SQL snake_case mismatch)
+  const allEvals = await db
+    .select()
+    .from(schema.evaluations)
+    .orderBy(desc(schema.evaluations.createdAt));
   const latestByTeam = new Map<string, typeof schema.evaluations.$inferSelect>();
-  for (const row of latest as unknown as (typeof schema.evaluations.$inferSelect)[]) {
-    latestByTeam.set(row.teamId, row);
+  for (const ev of allEvals) {
+    if (!latestByTeam.has(ev.teamId)) latestByTeam.set(ev.teamId, ev);
   }
 
   const evalIds = Array.from(latestByTeam.values()).map((e) => e.id);
@@ -50,7 +50,21 @@ export async function getLeaderboard(): Promise<LeaderRow[]> {
     };
   });
 
-  rows.sort((a, b) => (b.totalScore ?? -1) - (a.totalScore ?? -1));
+  // Sort: if any team has displayOrder, manual mode (asc nulls last);
+  // otherwise auto mode (by totalScore desc).
+  const hasManual = teams.some((t) => t.displayOrder != null);
+  if (hasManual) {
+    rows.sort((a, b) => {
+      const ao = a.team.displayOrder;
+      const bo = b.team.displayOrder;
+      if (ao == null && bo == null) return 0;
+      if (ao == null) return 1;
+      if (bo == null) return -1;
+      return ao - bo;
+    });
+  } else {
+    rows.sort((a, b) => (b.totalScore ?? -1) - (a.totalScore ?? -1));
+  }
   return rows;
 }
 

@@ -5,6 +5,7 @@ export const teams = pgTable("teams", {
   name: text("name").notNull(),
   repoUrl: text("repo_url").notNull(),
   members: text("members").array(),
+  displayOrder: integer("display_order"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
