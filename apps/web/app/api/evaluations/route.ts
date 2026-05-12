@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { desc } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { checkBearer } from "@/lib/auth";
 import { CRITERIA, TOTAL_MAX } from "@/lib/criteria";
 
 export const runtime = "nodejs";
@@ -33,9 +32,6 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  if (!checkBearer(req)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
   const body = (await req.json().catch(() => null)) as IncomingBody | null;
   if (!body || typeof body.teamId !== "string" || !Array.isArray(body.scores)) {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
