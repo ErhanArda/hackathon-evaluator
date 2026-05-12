@@ -13,10 +13,10 @@ const AGENTS = [
 ] as const;
 
 function formatElapsed(ms: number): string {
-  const total = Math.floor(ms / 1000);
+  const total = Math.max(0, Math.floor(ms / 1000));
   const min = Math.floor(total / 60);
   const sec = total % 60;
-  return min > 0 ? `${min}d ${sec.toString().padStart(2, "0")}s` : `${sec}s`;
+  return `${min.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
 }
 
 export function EvaluateButton({
