@@ -140,6 +140,29 @@ export function EvaluateButton({
     }
   }
 
+  async function cancel() {
+    if (!requestId) {
+      setStatus("idle");
+      setStartedAt(null);
+      return;
+    }
+    if (!confirm("Değerlendirme iptal edilsin mi?")) return;
+    try {
+      await fetch(`/api/eval-requests/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "failed", errorMsg: "İptal edildi" }),
+      });
+    } catch {
+      /* ignore */
+    }
+    if (pollRef.current) clearInterval(pollRef.current);
+    setStatus("idle");
+    setStartedAt(null);
+    setRequestId(null);
+    router.refresh();
+  }
+
   const isBusy = status === "queued" || status === "processing";
   const elapsed = startedAt ? now - startedAt : 0;
   const buttonLabel = isBusy
@@ -164,13 +187,23 @@ export function EvaluateButton({
             boyutuna göre değişir (analist/developer dosyaları gerçekten okur).
           </p>
         </div>
-        <button
-          onClick={trigger}
-          disabled={isBusy}
-          className="shrink-0 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {buttonLabel}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {isBusy && (
+            <button
+              onClick={cancel}
+              className="rounded-md border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50"
+            >
+              İptal
+            </button>
+          )}
+          <button
+            onClick={trigger}
+            disabled={isBusy}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {buttonLabel}
+          </button>
+        </div>
       </div>
 
       {isBusy && (
