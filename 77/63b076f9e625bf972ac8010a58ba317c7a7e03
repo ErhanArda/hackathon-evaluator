@@ -1,0 +1,19 @@
+.claude/skills/process-queue/SKILL.md
+  s_7c0535ebf77492::t_7726c87b29d01c 3,6,8,11-12,16,19-20,23,25-26,32,34-35,37,39-43,46,48,50,52-56,58,60-61,63,65,67,69,73,75,78-83,89,91,93-94,97-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "7763b076f9e625bf972ac8010a58ba317c7a7e03",
+  "prompts": {},
+  "sessions": {
+    "s_7c0535ebf77492": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c0a0e3b1-5e69-4a88-b804-0b06d808cb92",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
