@@ -7,10 +7,10 @@
     "build": "node scripts/maybe-db-push.mjs && next build",
     "start": "next start",
     "lint": "eslint",
-    "db:push": "drizzle-kit push",
+    "db:push": "drizzle-kit push --force",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
-    "seed": "tsx ../../scripts/seed-teams.ts"
+    "seed": "tsx scripts/seed-teams.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

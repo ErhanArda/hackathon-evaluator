@@ -2,11 +2,11 @@ import { config as loadEnv } from "dotenv";
 import path from "node:path";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { teams } from "../apps/web/lib/schema";
+import { teams } from "../lib/schema";
 
-// Load env from apps/web/.env.local (where DATABASE_URL is configured)
-loadEnv({ path: path.join(__dirname, "..", "apps", "web", ".env.local") });
-loadEnv(); // also load root .env if present
+// Load env from apps/web/.env.local (one level up from this script's dir)
+loadEnv({ path: path.join(__dirname, "..", ".env.local") });
+loadEnv();
 
 const url = process.env.POSTGRES_URL ?? process.env.DATABASE_URL;
 if (!url) {
