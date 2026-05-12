@@ -1,0 +1,27 @@
+.claude/skills/process-queue/SKILL.md
+  s_7c0535ebf77492::t_e72411cc38e83e 1-133
+apps/web/app/api/eval-requests/[id]/route.ts
+  s_7c0535ebf77492::t_f43ef691b23650 1-62
+apps/web/lib/schema.ts
+  s_7c0535ebf77492::t_4c1cf0ee25b59b 36-46,52
+apps/web/app/api/eval-requests/route.ts
+  s_7c0535ebf77492::t_97a17cbc25c0d0 1-64
+apps/web/components/EvaluateButton.tsx
+  s_7c0535ebf77492::t_7e1363e1523d41 3-6,17-21,25-102,108,112-125,128-129,134-135,139-141,143,146-177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "7a9c80c016bbfc22e7a66fe319a1e5b84037102d",
+  "prompts": {},
+  "sessions": {
+    "s_7c0535ebf77492": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c0a0e3b1-5e69-4a88-b804-0b06d808cb92",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
