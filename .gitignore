@@ -29,6 +29,10 @@ Thumbs.db
 # Vercel
 .vercel/
 
+# Claude Code runtime artifacts
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
+
 # tsbuild
 *.tsbuildinfo
 next-env.d.ts
