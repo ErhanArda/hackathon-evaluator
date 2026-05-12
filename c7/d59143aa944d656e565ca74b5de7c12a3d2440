@@ -1,0 +1,21 @@
+apps/web/lib/queries.ts
+  s_7c0535ebf77492::t_a5a3127c1c4aab 72,80
+  s_7c0535ebf77492::t_6c9875fe6585b8 33
+  s_7c0535ebf77492::t_b778c5b147ce28 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "c7d59143aa944d656e565ca74b5de7c12a3d2440",
+  "prompts": {},
+  "sessions": {
+    "s_7c0535ebf77492": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c0a0e3b1-5e69-4a88-b804-0b06d808cb92",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
