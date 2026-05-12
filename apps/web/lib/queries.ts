@@ -1,5 +1,5 @@
 import { db, schema } from "./db";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { CRITERIA, TOTAL_MAX } from "./criteria";
 
 export type LeaderRow = {
@@ -30,7 +30,7 @@ export async function getLeaderboard(): Promise<LeaderRow[]> {
     scores = await db
       .select()
       .from(schema.criterionScores)
-      .where(sql`evaluation_id = ANY(${evalIds})`);
+      .where(inArray(schema.criterionScores.evaluationId, evalIds));
   }
   const scoresByEval = new Map<string, Record<string, number>>();
   for (const s of scores) {
@@ -69,7 +69,7 @@ export async function getTeamDetail(teamId: string) {
     ? await db
         .select()
         .from(schema.criterionScores)
-        .where(sql`evaluation_id = ANY(${evalIds})`)
+        .where(inArray(schema.criterionScores.evaluationId, evalIds))
     : [];
 
   const scoreIds = scores.map((s) => s.id);
@@ -77,7 +77,7 @@ export async function getTeamDetail(teamId: string) {
     ? await db
         .select()
         .from(schema.aiRationales)
-        .where(sql`criterion_score_id = ANY(${scoreIds})`)
+        .where(inArray(schema.aiRationales.criterionScoreId, scoreIds))
     : [];
 
   const rationaleByScore = new Map(rationales.map((r) => [r.criterionScoreId, r]));
