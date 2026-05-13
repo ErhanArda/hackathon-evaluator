@@ -15,6 +15,7 @@ const AGENTS = [
   { key: "developer",   label: "Developer",    desc: "temiz kod (context7)" },
   { key: "reviewer",    label: "Reviewer",     desc: "mimari (context7)"    },
   { key: "ai-evidence", label: "AI Evidence",  desc: "agentic + AI izleri"  },
+  { key: "tester",      label: "Tester",       desc: "unit + RTL + E2E"     },
 ] as const;
 
 function formatElapsed(ms: number): string {

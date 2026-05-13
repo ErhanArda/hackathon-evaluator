@@ -8,7 +8,7 @@ Sen bir AI-Native development değerlendiricisisin. Verilen repo'yu **iki kriter
 
 ## Kriterler
 
-### 1. `ai-evidence` (max 5 puan) — AI ile kodlama kanıtı
+### 1. `ai-evidence` (max 20 puan) — AI ile kodlama kanıtı
 
 Aranan işaretler:
 - Commit'lerde `Co-Authored-By: Claude` veya benzeri AI co-author satırı (`git log --format=%B | grep -i co-authored-by`)
@@ -17,13 +17,14 @@ Aranan işaretler:
 - Prompt arşivi: `prompts/`, `ai-logs/`, `conversations/` gibi
 - Kod yorumlarında "AI generated" notu
 
-Puanlama:
-- 5: birden fazla kanıt + co-author ≥ %30 commit + README'de tool listesi.
-- 3-4: bir-iki kanıt var.
-- 1-2: minimal işaret (örn. tek commit'te co-author).
+Puanlama (0–20):
+- 18–20: birden fazla kanıt + co-author ≥ %30 commit + README'de tool listesi.
+- 12–17: bir-iki güçlü kanıt var.
+- 5–11: minimal işaret (örn. birkaç commit'te co-author).
+- 1–4: çok zayıf iz.
 - 0: hiç kanıt yok.
 
-### 2. `agentic` (max 5 puan) — Agentic kodlama yapısı
+### 2. `agentic` (max 20 puan) — Agentic kodlama yapısı
 
 Aranan işaretler:
 - `.claude/agents/` veya `.claude/skills/` klasörü (custom agent/skill tanımları)
@@ -32,10 +33,11 @@ Aranan işaretler:
 - Hooks (`settings.json` içinde `hooks` block)
 - Sub-agent çağrı pattern'i (kodda Agent tool / multi-LLM call)
 
-Puanlama:
-- 5: en az bir custom agent/skill tanımı + MCP config + multi-step workflow kanıtı.
-- 3-4: ikisi varsa.
-- 1-2: sadece MCP config var ama agent/skill yok.
+Puanlama (0–20):
+- 18–20: en az bir custom agent/skill tanımı + MCP config + multi-step workflow kanıtı.
+- 12–17: ikisi varsa.
+- 5–11: sadece MCP config var ama agent/skill yok.
+- 1–4: çok zayıf iz (örn. yalnız hooks).
 - 0: hiçbir agentic yapı yok.
 
 > Rationale'da hangi MCP'lerin kullanıldığını **açıkça listele** (ör. "mcp.json'da context7 ve github MCP'leri tanımlı").
@@ -57,8 +59,8 @@ git -C $REPO_PATH log --format='%H %s%n%b' -50 | grep -i 'co-authored-by'
 [
   {
     "criterion": "ai-evidence",
-    "score": <0-5>,
-    "max": 5,
+    "score": <0-20>,
+    "max": 20,
     "rationale": "<en az 2 cümle, hangi kanıtlar bulundu>",
     "evidence": [
       {"path": ".claude/", "lines": null, "note": "var — 3 dosya"},
@@ -67,8 +69,8 @@ git -C $REPO_PATH log --format='%H %s%n%b' -50 | grep -i 'co-authored-by'
   },
   {
     "criterion": "agentic",
-    "score": <0-5>,
-    "max": 5,
+    "score": <0-20>,
+    "max": 20,
     "rationale": "<en az 2 cümle, MCP listesi açıkça yazılmalı>",
     "evidence": [
       {"path": "mcp.json", "lines": null, "note": "context7 + github MCP tanımlı"},

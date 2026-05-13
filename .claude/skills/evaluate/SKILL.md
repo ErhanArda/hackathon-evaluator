@@ -1,11 +1,11 @@
 ---
 name: evaluate
-description: Hackathon takım reposunu klonla, 4 sub-agent'la paralel değerlendir, sonucu Vercel API'ye POST et. Kullanım. /evaluate <repo-url> team-id=<id>
+description: Hackathon takım reposunu klonla, 5 sub-agent'la paralel değerlendir, sonucu Vercel API'ye POST et. Kullanım. /evaluate <repo-url> team-id=<id>
 ---
 
 # /evaluate — Hackathon Repo Değerlendirme Orchestrator
 
-Bu skill verilen GitHub reposunu klonlar, **4 sub-agent'ı paralel** çalıştırır (Agent tool, single message multi-call), 6 kriter üzerinden puanlar ve sonucu deploy edilmiş Vercel API'sine POST eder.
+Bu skill verilen GitHub reposunu klonlar, **5 sub-agent'ı paralel** çalıştırır (Agent tool, single message multi-call), 7 kriter üzerinden 100 puan üstünden puanlar ve sonucu deploy edilmiş Vercel API'sine POST eder.
 
 ## Argüman Beklentisi
 
@@ -48,7 +48,7 @@ git clone --depth 50 <repo-url> "$WORKDIR/repo" 2>&1 || {
 
 Bu özet bilgileri sub-agent'lara context olarak verirsin.
 
-### 4. **PARALEL** sub-agent çağrısı (TEK MESAJDA 4 Agent tool call)
+### 4. **PARALEL** sub-agent çağrısı (TEK MESAJDA 5 Agent tool call)
 
 Çağrı şablonu — her birini ayrı Agent tool call olarak **aynı mesajda** gönder:
 
@@ -80,7 +80,14 @@ subagent_type: "Explore"
 prompt: <oku ./agents/ai-evidence.md, repo-path ve git-log doldur>
 ```
 
-> **KRİTİK:** Dört Agent çağrısı tek bir asistan mesajında olmalı (paralel çalışır). Aksi halde sıralı koşar ve yavaşlar.
+#### Agent 5: tester
+```
+description: "Backend + frontend test değerlendirme"
+subagent_type: "Explore"
+prompt: <oku ./agents/tester.md, repo-path ve top-deps doldur>
+```
+
+> **KRİTİK:** Beş Agent çağrısı tek bir asistan mesajında olmalı (paralel çalışır). Aksi halde sıralı koşar ve yavaşlar.
 
 ### 5. Cevap kontratı (her sub-agent'tan beklenen)
 
@@ -89,7 +96,7 @@ Her sub-agent JSON döner. Parse et, schema doğrula:
 ```json
 [
   {
-    "criterion": "ai-evidence" | "agentic" | "docs" | "readme" | "clean-code" | "architecture",
+    "criterion": "ai-evidence" | "agentic" | "docs" | "readme" | "clean-code" | "architecture" | "tests",
     "score": <int 0..max>,
     "max": <int>,
     "rationale": "<en az 2 cümle>",
@@ -102,12 +109,13 @@ Her sub-agent JSON döner. Parse et, schema doğrula:
 `developer` → `clean-code` (1 madde)
 `reviewer` → `architecture` (1 madde)
 `ai-evidence` → `ai-evidence` ve `agentic` (2 madde)
+`tester` → `tests` (1 madde)
 
-Toplam 6 madde olmalı. Eksik kriter varsa, eksik olanı 0 puan + "agent yanıtı eksikti" rationale ile doldur.
+Toplam 7 madde olmalı. Eksik kriter varsa, eksik olanı 0 puan + "agent yanıtı eksikti" rationale ile doldur.
 
 ### 6. Toplam ve POST
 
-Toplam = 6 madde'nin score toplamı (max 30).
+Toplam = 7 madde'nin score toplamı (max 100).
 
 ```bash
 curl -fsS -X POST "$EVALUATOR_API_BASE/api/evaluations" \
@@ -117,8 +125,8 @@ curl -fsS -X POST "$EVALUATOR_API_BASE/api/evaluations" \
 {
   "teamId": "<team-id>",
   "evaluator": "claude-code",
-  "modelNote": "4 sub-agent (analist+developer+reviewer+ai-evidence) · context7 MCP",
-  "scores": [ ... 6 kriter ... ]
+  "modelNote": "5 sub-agent (analist+developer+reviewer+ai-evidence+tester) · context7 MCP",
+  "scores": [ ... 7 kriter ... ]
 }
 JSON
 )
@@ -127,9 +135,9 @@ JSON
 Pratik: scripts/post-evaluation.sh helper'ı var, Claude doğrudan onu çağırabilir.
 
 ### 7. Operator'a özet
-- `<takım> · <toplam>/30 · <100'lük>` tek satır
+- `<takım> · <toplam>/100` tek satır
 - Dashboard linki: `$EVALUATOR_API_BASE/teams/<team-id>`
-- Kriter dökümü: 6 satır `<kriter>: <skor>/<max> — <rationale ilk cümle>`
+- Kriter dökümü: 7 satır `<kriter>: <skor>/<max> — <rationale ilk cümle>`
 
 ### 8. Temizlik
 ```bash
@@ -138,7 +146,7 @@ rm -rf "$WORKDIR"
 
 ## Hata Yolu
 
-- **Repo private / 404** → POST 6 madde × 0 puan, rationale "Repo erişilemedi (private veya yok). Skor için public + master branch çalışan repo gerekir."
+- **Repo private / 404** → POST 7 madde × 0 puan, rationale "Repo erişilemedi (private veya yok). Skor için public + master branch çalışan repo gerekir."
 - **Sub-agent JSON bozuk** → 1 kez retry, hâlâ bozuksa o kriter için 0 puan + "AI cevabı parse edilemedi" rationale
 - **POST 401** → operator'a "INGEST_TOKEN eşleşmiyor — env kontrol et" mesajı, abort
 - **POST 4xx team_id eksik** → operator'a "team-id veritabanında yok, /admin'den ekle" mesajı, abort

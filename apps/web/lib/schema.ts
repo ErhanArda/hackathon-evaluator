@@ -13,7 +13,7 @@ export const evaluations = pgTable("evaluations", {
   id: text("id").primaryKey(),
   teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   totalScore: integer("total_score").notNull(),
-  maxScore: integer("max_score").notNull().default(30),
+  maxScore: integer("max_score").notNull().default(100),
   evaluator: text("evaluator").notNull(),
   modelNote: text("model_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -43,7 +43,7 @@ export const evalRequests = pgTable("eval_requests", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
   evaluationId: text("evaluation_id"),
   errorMsg: text("error_msg"),
-  // per-agent live state: { analist: {status, startedAt, completedAt}, developer: ..., reviewer: ..., 'ai-evidence': ... }
+  // per-agent live state: { analist: {status, startedAt, completedAt}, developer: ..., reviewer: ..., 'ai-evidence': ..., tester: ... }
   agentStates: jsonb("agent_states"),
 });
 

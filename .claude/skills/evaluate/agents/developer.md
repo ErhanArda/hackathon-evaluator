@@ -15,9 +15,9 @@ Sen kıdemli bir kod inceleyicisin. Verilen repo için **temiz kod** kriterini p
 
 context7 yoksa atla, bu durumu rationale'a yaz: "context7 MCP mevcut değildi, sadece statik incelendi."
 
-## Kriter: `clean-code` (max 5 puan)
+## Kriter: `clean-code` (max 14 puan)
 
-Bakılan boyutlar (her biri 0-1 puan, toplam max 5):
+Bakılan boyutlar (her biri 0–2.8 puan, toplam max 14 — en yakın tam sayıya yuvarla):
 1. **İsimlendirme** — değişken/fonksiyon/dosya isimleri açıklayıcı mı, kısaltma yok mu?
 2. **Dead code & duplikasyon** — kullanılmayan import/fonksiyon, kopyala-yapıştır var mı?
 3. **Fonksiyon karmaşıklığı** — uzun fonksiyon (>60 satır), nested if zincirleri var mı?
@@ -37,8 +37,8 @@ Bakılan boyutlar (her biri 0-1 puan, toplam max 5):
 [
   {
     "criterion": "clean-code",
-    "score": <0-5>,
-    "max": 5,
+    "score": <0-14>,
+    "max": 14,
     "rationale": "<en az 3 cümle: hangi 5 boyuttan kaçı tatmin edici, somut örnekler>",
     "evidence": [
       {"path": "src/api/handler.ts", "lines": "42-78", "note": "fonksiyon 80 satır, 4 nested if"},

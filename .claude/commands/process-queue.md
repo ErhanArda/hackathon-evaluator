@@ -1,6 +1,6 @@
 # /process-queue — Batch Eval Worker (per-agent live status)
 
-Bekleyen `eval_requests`'i kuyruktan al, **batch=4 paralel**, her biri için 4 sub-agent (max 16 paralel). Sub-agent'lar **kendileri** DB'ye PATCH atarak canlı durum bildirir.
+Bekleyen `eval_requests`'i kuyruktan al, **batch=4 paralel**, her biri için 5 sub-agent (max 20 paralel). Sub-agent'lar **kendileri** DB'ye PATCH atarak canlı durum bildirir.
 
 ## Argümanlar (opsiyonel)
 - `base` — varsayılan `http://localhost:3000`
@@ -24,10 +24,10 @@ curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
 ```
 409 → başkası kapmış, atla.
 
-### 3. agent_states'i 4 'pending' ile initialize
+### 3. agent_states'i 5 'pending' ile initialize
 Her claimed request için:
 ```bash
-for agent in analist developer reviewer ai-evidence; do
+for agent in analist developer reviewer ai-evidence tester; do
   curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID/agent-state" \
     -H "Content-Type: application/json" \
     -d "{\"agent\":\"$agent\",\"status\":\"pending\"}"
@@ -46,7 +46,7 @@ done
 wait
 ```
 
-### 6. **TEK MESAJDA N×4 = 4-16 paralel Agent tool call**
+### 6. **TEK MESAJDA N×5 = 5-20 paralel Agent tool call**
 
 Sub-agent prompt template'leri `.claude/skills/evaluate/agents/*.md` altında. **Her sub-agent prompt'unun başına ve sonuna mutlaka şunları ekle:**
 
@@ -68,10 +68,10 @@ curl -s -X PATCH "{BASE}/api/eval-requests/{REQ_ID}/agent-state" \
 
 > NOT: analist ve ai-evidence agent'ları 2 kriter üretir; PATCH'te 2 kriterin skorlarının ortalaması veya bir özet değer kullanılabilir. Veya iki ayrı PATCH (agent: 'analist-docs', 'analist-readme'). En sade: agent kendi `{AGENT_KEY}` ile tek PATCH atar, score alanına ilk kriterin puanını yazar.
 
-**KRİTİK:** 4-16 Agent call TEK asistan mesajında — paralel.
+**KRİTİK:** 5-20 Agent call TEK asistan mesajında — paralel.
 
 ### 7. Aggregate + POST evaluation
-Her takım için 6 madde'yi topla, ayrı POST:
+Her takım için 7 madde'yi topla, ayrı POST:
 ```bash
 curl -s -X POST "$BASE/api/evaluations" -d @payload_$i.json
 ```

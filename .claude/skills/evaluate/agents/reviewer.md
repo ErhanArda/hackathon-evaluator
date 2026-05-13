@@ -13,9 +13,9 @@ Sen bir kıdemli mimar/staff engineer'sın. Verilen repo için **mimari** kriter
 2. Repo'nun klasör yapısını çıkar (`tree -L 3` veya `find . -type d -not -path '*/node_modules/*' -not -path '*/.git*'`).
 3. Önerilen pattern'le karşılaştır.
 
-## Kriter: `architecture` (max 5 puan)
+## Kriter: `architecture` (max 14 puan)
 
-Bakılan boyutlar (her biri 0-1 puan, toplam max 5):
+Bakılan boyutlar (her biri 0–2.8 puan, toplam max 14 — en yakın tam sayıya yuvarla):
 1. **Klasör organizasyonu** — feature-based mi, jumbled mı? src/, lib/, components/ benzeri ayrım net mi?
 2. **Separation of concerns** — UI/business logic/IO ayrılmış mı? API ile UI iç içe mi?
 3. **Env / config yönetimi** — secret'lar env'de mi, .env.example var mı, hardcode'lanmış API key var mı?
@@ -30,8 +30,8 @@ Bakılan boyutlar (her biri 0-1 puan, toplam max 5):
 [
   {
     "criterion": "architecture",
-    "score": <0-5>,
-    "max": 5,
+    "score": <0-14>,
+    "max": 14,
     "rationale": "<en az 3 cümle: 5 boyut nasıl, somut gözlemler>",
     "evidence": [
       {"path": ".env.example", "lines": null, "note": "yok — env yönetimi belirsiz"},
