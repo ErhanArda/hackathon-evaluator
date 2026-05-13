@@ -342,14 +342,37 @@ function scanForInjection() {
     /this is a test( only)?,?\s+(give|return|output)/i,
   ];
   const hits = [];
+  // Liste/örnek bağlamı: bullet + tırnaklı satır veya code-fence içi → örnek say, atla.
+  const isExampleLine = (raw) => {
+    const trimmed = raw.trim();
+    // Markdown bullet + tırnak: '- "..."', '* "..."', '+ "..."'
+    if (/^[-*+]\s+["'`]/.test(trimmed)) return true;
+    // Numaralı liste + tırnak: '1. "..."'
+    if (/^\d+\.\s+["'`]/.test(trimmed)) return true;
+    return false;
+  };
+  // Anti-injection guidance bağlamı: yakın çevrede "görmezden gel", "ignore these",
+  // "examples", "anti-injection", "prompt-injection" varsa örnek say.
+  const hasGuidanceContext = (lines, idx) => {
+    const start = Math.max(0, idx - 5);
+    const end = Math.min(lines.length, idx + 1);
+    const window = lines.slice(start, end).join("\n").toLowerCase();
+    return /görmezden gel|ignore (these|the following|patterns)|examples? of|anti-?injection|prompt-?injection|do not follow|seni etkilememeli|skor[uy]?[uü]\s+etki/i.test(window);
+  };
   const scanFile = (relPath) => {
     const content = readSafe(relPath);
     if (!content) return;
     const lines = content.split("\n");
+    let inCodeFence = false;
     for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^```/.test(line.trim())) { inCodeFence = !inCodeFence; continue; }
+      if (inCodeFence) continue;
+      if (isExampleLine(line)) continue;
+      if (hasGuidanceContext(lines, i)) continue;
       for (const re of patterns) {
-        if (re.test(lines[i])) {
-          hits.push({ path: relPath, line: i + 1, excerpt: lines[i].trim().slice(0, 200), pattern: re.source });
+        if (re.test(line)) {
+          hits.push({ path: relPath, line: i + 1, excerpt: line.trim().slice(0, 200), pattern: re.source });
           break;
         }
       }
