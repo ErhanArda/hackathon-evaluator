@@ -1,0 +1,60 @@
+.claude/skills/evaluate/agents/analist.md
+  s_4640582183558b::t_aab626b8102b86 46-47,55-56
+  s_4640582183558b::t_d12d251a38e20d 11,18-23,26-34,36
+apps/web/lib/schema.ts
+  s_4640582183558b::t_8f38955d8f02f8 16
+  s_4640582183558b::t_3acda8971f071a 46
+.claude/skills/evaluate/agents/developer.md
+  s_4640582183558b::t_17cd957512997e 40-41
+  s_4640582183558b::t_13baa7d8b04c5a 18,20
+.claude/skills/process-queue/SKILL.md
+  s_4640582183558b::t_69aae8e8b8e8c8 81-83
+  s_4640582183558b::t_97fe9ec22661c7 99
+  s_4640582183558b::t_b2319b324c7518 3,8
+  s_4640582183558b::t_539a257fd0b252 46,48,50,57,59,62
+.claude/skills/evaluate/agents/ai-evidence.md
+  s_4640582183558b::t_5400423391d825 11,20-24,27,36-40
+  s_4640582183558b::t_7556758e72b15f 72-73
+  s_4640582183558b::t_67386381efba7a 62-63
+apps/web/lib/criteria.ts
+  s_4640582183558b::t_fc0abfe4c9ff2c 2-8
+.claude/commands/process-queue.md
+  s_4640582183558b::t_0bfb809dfb6577 71,74
+  s_4640582183558b::t_a1ae95849631c4 3
+  s_4640582183558b::t_75b167fadcd013 27,30
+  s_4640582183558b::t_60ca24faecbed3 49
+apps/web/components/EvaluateButton.tsx
+  s_4640582183558b::t_2ab57f5e41c46d 18
+docs/criteria.md
+  s_4640582183558b::t_7ff5050eb30c9d 3,7-13,19-20,29-30
+README.md
+  s_4640582183558b::t_e6f5958b6fac4d 3,9-10,12,17,23-24,28-29,49,51,57-63,90,92,97-103,112,120-122,128-131,133-134,136-147,156
+.claude/skills/evaluate/agents/tester.md
+  s_4640582183558b::t_da9303654a94ca 1-51
+.claude/skills/evaluate/SKILL.md
+  s_4640582183558b::t_13cdc75e86b343 128-129
+  s_4640582183558b::t_16f748f771b249 3,8
+  s_4640582183558b::t_75c4612216047f 138,140
+  s_4640582183558b::t_1f199c209482e5 51,83-90
+  s_4640582183558b::t_d38e7648830879 99,112,114,118
+  s_4640582183558b::t_d60af95845608c 149
+.claude/skills/evaluate/agents/reviewer.md
+  s_4640582183558b::t_8f749d6b63e331 33-34
+  s_4640582183558b::t_2ad922747e502c 16,18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "33e655132bbcd6127832787ff3bdcf18e836ccae",
+  "prompts": {},
+  "sessions": {
+    "s_4640582183558b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "106ed4a0-91a4-4909-836c-b3c691714845",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
