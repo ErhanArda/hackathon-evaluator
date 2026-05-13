@@ -1,6 +1,6 @@
-# /process-queue — Batch Eval Worker (per-agent live status)
+# /process-queue — Batch Eval Worker (deterministik + LLM hibrit, per-agent live status)
 
-Bekleyen `eval_requests`'i kuyruktan al, **batch=4 paralel**, her biri için 5 sub-agent (max 20 paralel). Sub-agent'lar **kendileri** DB'ye PATCH atarak canlı durum bildirir.
+Bekleyen `eval_requests`'i kuyruktan al, **batch=4 paralel**, her biri için 5 kriter deterministik script (<2 sn) + 2 LLM sub-agent (developer+reviewer, max 8 paralel). Script orchestrator, deterministik kriterler için agent-state'leri anında "done" PATCH'ler; LLM agent'lar kendi durumlarını PATCH eder.
 
 ## Argümanlar (opsiyonel)
 - `base` — varsayılan `http://localhost:3000`
@@ -25,7 +25,7 @@ curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
 409 → başkası kapmış, atla.
 
 ### 3. agent_states'i 5 'pending' ile initialize
-Her claimed request için:
+Her claimed request için (UI rozetleri için 5 satır — analist/ai-evidence/tester deterministik script tarafından, developer/reviewer LLM tarafından):
 ```bash
 for agent in analist developer reviewer ai-evidence tester; do
   curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID/agent-state" \
@@ -46,9 +46,17 @@ done
 wait
 ```
 
-### 6. **TEK MESAJDA N×5 = 5-20 paralel Agent tool call**
+### 6a. Deterministik script (her takım için paralel Bash background)
+```bash
+node /Users/tcerarda/Desktop/hackathon/scripts/eval-deterministic.mjs "$WORKDIR_$i/repo" > /tmp/det-$REQ_ID.json &
+```
+Bekle, parse et. 5 kriter (docs, readme, ai-evidence, agentic, tests) anında elde. analist/ai-evidence/tester agent-state'lerini "done" + ilgili skor ile PATCH et (UI canlı yeşillenir).
 
-Sub-agent prompt template'leri `.claude/skills/evaluate/agents/*.md` altında. **Her sub-agent prompt'unun başına ve sonuna mutlaka şunları ekle:**
+`securityScan.detected` ise modelNote'a uyarı ekle.
+
+### 6b. **TEK MESAJDA N×2 = 2-8 paralel LLM Agent tool call**
+
+Yalnızca **developer + reviewer**. Prompt template'leri `.claude/skills/evaluate/agents/{developer,reviewer}.md`. **Her sub-agent prompt'unun başına ve sonuna mutlaka şunları ekle:**
 
 #### Başlangıç (her sub-agent prompt'unun ÜSTÜ):
 ```
@@ -68,10 +76,10 @@ curl -s -X PATCH "{BASE}/api/eval-requests/{REQ_ID}/agent-state" \
 
 > NOT: analist ve ai-evidence agent'ları 2 kriter üretir; PATCH'te 2 kriterin skorlarının ortalaması veya bir özet değer kullanılabilir. Veya iki ayrı PATCH (agent: 'analist-docs', 'analist-readme'). En sade: agent kendi `{AGENT_KEY}` ile tek PATCH atar, score alanına ilk kriterin puanını yazar.
 
-**KRİTİK:** 5-20 Agent call TEK asistan mesajında — paralel.
+**KRİTİK:** 2-8 LLM Agent call TEK asistan mesajında — paralel.
 
 ### 7. Aggregate + POST evaluation
-Her takım için 7 madde'yi topla, ayrı POST:
+Her takım için 7 madde'yi topla (5 script + 2 LLM), ayrı POST:
 ```bash
 curl -s -X POST "$BASE/api/evaluations" -d @payload_$i.json
 ```

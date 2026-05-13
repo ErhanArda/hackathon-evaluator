@@ -16,6 +16,8 @@ export const evaluations = pgTable("evaluations", {
   maxScore: integer("max_score").notNull().default(100),
   evaluator: text("evaluator").notNull(),
   modelNote: text("model_note"),
+  // {detected: bool, count: int, hits: [{path,line,excerpt,pattern}], note: string}
+  securityScan: jsonb("security_scan"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

@@ -15,11 +15,19 @@ type IncomingScore = {
   evidence?: unknown;
 };
 
+type SecurityScan = {
+  detected?: boolean;
+  count?: number;
+  hits?: Array<{ path: string; line: number; excerpt: string; pattern?: string }>;
+  note?: string;
+};
+
 type IncomingBody = {
   teamId: string;
   evaluator?: string;
   modelNote?: string;
   scores: IncomingScore[];
+  securityScan?: SecurityScan;
 };
 
 export async function GET() {
@@ -55,6 +63,7 @@ export async function POST(req: NextRequest) {
     maxScore: TOTAL_MAX,
     evaluator: body.evaluator ?? "claude-code",
     modelNote: body.modelNote ?? null,
+    securityScan: body.securityScan ?? null,
   });
 
   for (const s of body.scores) {

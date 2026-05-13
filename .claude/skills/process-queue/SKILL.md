@@ -1,11 +1,15 @@
 ---
 name: process-queue
-description: Bekleyen evaluation request'lerini batch al (max 4 paralel), her biri için 5 sub-agent paralel başlat (toplam 20 paralel agent), sonuçları yaz. Kullanım. /process-queue [base=http://localhost:3000]
+description: Bekleyen evaluation request'lerini batch al, her biri için deterministik script (5 kriter, <2sn) + 2 paralel LLM agent (developer+reviewer) çalıştır, sonuçları yaz. Kullanım. /process-queue [base=http://localhost:3000]
 ---
 
-# /process-queue — Batch Eval Worker
+# /process-queue — Batch Eval Worker (deterministik + LLM hibrit)
 
-Bu skill `/api/eval-requests`'ten **pending** request'leri toplu alır, **batch (max 4)** halinde **paralel** işler. Her request için 5 sub-agent → bir batch'te 20 paralel agent çağrısı.
+Bu skill `/api/eval-requests`'ten **pending** request'leri toplu alır, **batch (max 4)** halinde **paralel** işler. Her request için:
+- 5 kriter (docs, readme, ai-evidence, agentic, tests) → `scripts/eval-deterministic.mjs` ile anında
+- 2 kriter (clean-code, architecture) → tek mesajda paralel LLM sub-agent
+
+Bir batch'te toplam **2N paralel LLM çağrısı** (N=batch). Aynı repo için skor **tutarlıdır** (LLM yalnız 2 yargı kriterinde küçük varyans).
 
 ## Argümanlar
 - `base` (opsiyonel) — varsayılan `http://localhost:3000`. Prod için Vercel URL'i.
@@ -43,23 +47,32 @@ done
 wait
 ```
 
-Hata olan repo için (private/404): rationale "Repo erişilemedi" ile 7×0 puan POST + mark done.
+Hata olan repo için (private/404): rationale "Repo erişilemedi" ile 7×0 puan POST + mark done. (Script çağırma — repo path yok)
 
-### 5. **PARALEL SUB-AGENT** — TEK MESAJDA 20 ADET Agent tool call
+### 5a. Deterministik skorlar (script) — paralel her takım için
 
-İçinde N claimed request varsa, **tek bir asistan mesajında N×5 = 5-20 Agent tool call** yap. Sub-agent prompt template'leri: `.claude/skills/evaluate/agents/*.md` — yer tutucuları (REPO_PATH, REPO_SUMMARY, TOP_DEPS, GIT_LOG) her takım için doldur.
+Her takım için ayrı Bash background:
+```bash
+node /Users/tcerarda/Desktop/hackathon/scripts/eval-deterministic.mjs "$WORKDIR/repo" > /tmp/det-$REQ_ID.json
+```
+Wait, parse. 5 kriter (docs, readme, ai-evidence, agentic, tests) anında hazır. UI rozetlerini PATCH'le (analist/ai-evidence/tester agent-state'leri = done, score = ilgili kriter skoru).
+
+`securityScan.detected === true` ise modelNote'a "⚠ prompt-injection N hit" ekle.
+
+### 5b. **PARALEL LLM SUB-AGENT** — TEK MESAJDA 2N Agent call
+
+N claimed request → tek asistan mesajında N×2 = 2-8 Agent tool call:
 
 Per takım:
-- Agent: `analist` (Explore) — `agents/analist.md`
-- Agent: `developer` (general-purpose) — `agents/developer.md`
-- Agent: `reviewer` (general-purpose) — `agents/reviewer.md`
-- Agent: `ai-evidence` (Explore) — `agents/ai-evidence.md`
-- Agent: `tester` (Explore) — `agents/tester.md`
+- Agent: `developer` (general-purpose) — `agents/developer.md` → `clean-code`
+- Agent: `reviewer` (general-purpose) — `agents/reviewer.md` → `architecture`
 
-> **KRİTİK:** Hepsi TEK mesaj. 20 Agent call paralel başlar.
+> **KRİTİK:** Hepsi TEK mesaj. 2N Agent call paralel başlar. developer/reviewer agent-state'leri running→done PATCH'lenir (script orchestrator'dan).
+
+> Eski analist/ai-evidence/tester agent'ları **artık çağrılmaz** — script onların yerini aldı.
 
 ### 6. Sonuçları topla ve POST et
-Her takım için 7 madde'yi aggregate et, total hesapla. Sonra her takım için ayrı POST:
+Her takım için 7 madde'yi aggregate et (5 script + 2 LLM), total hesapla. Sonra her takım için ayrı POST:
 ```bash
 curl -X POST "$BASE/api/evaluations" -d @payload_$i.json
 ```

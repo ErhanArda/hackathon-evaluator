@@ -84,6 +84,39 @@ export default async function TeamDetail({
             )}
           </div>
 
+          {(() => {
+            const scan = latest.securityScan as
+              | { detected?: boolean; count?: number; hits?: Array<{ path: string; line: number; excerpt: string }>; note?: string }
+              | null;
+            if (!scan || !scan.detected) return null;
+            return (
+              <div className="rounded-lg border-2 border-red-500 bg-red-50 p-4 shadow-sm">
+                <div className="flex items-start gap-2">
+                  <span className="text-xl">⚠️</span>
+                  <div className="flex-1">
+                    <h3 className="text-base font-bold text-red-700">
+                      Prompt Injection Tespit Edildi — {scan.count ?? scan.hits?.length ?? 0} adet
+                    </h3>
+                    <p className="mt-1 text-sm text-red-700">
+                      Repo dosyalarında AI değerlendiriciyi manipüle etmeye yönelik içerik bulundu. Bu deterministik
+                      skorları ETKİLEMEMİŞTİR; jüri bilgilendirmesi için listeleniyor.
+                    </p>
+                    {Array.isArray(scan.hits) && scan.hits.length > 0 && (
+                      <ul className="mt-3 space-y-1 text-xs font-mono">
+                        {scan.hits.slice(0, 20).map((h, i) => (
+                          <li key={i} className="rounded bg-red-100 px-2 py-1 text-red-900">
+                            <span className="font-semibold">{h.path}:{h.line}</span>
+                            {h.excerpt ? <span className="ml-2 text-red-700">— {h.excerpt}</span> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Kriter Dökümü</h2>
             {CRITERIA.map((c) => {

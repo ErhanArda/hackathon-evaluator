@@ -1,11 +1,17 @@
 ---
 name: evaluate
-description: Hackathon takım reposunu klonla, 5 sub-agent'la paralel değerlendir, sonucu Vercel API'ye POST et. Kullanım. /evaluate <repo-url> team-id=<id>
+description: Hackathon takım reposunu klonla, 5 kriteri deterministik Node script ile + 2 kriteri paralel LLM agent ile değerlendir, sonucu Vercel API'ye POST et. Kullanım. /evaluate <repo-url> team-id=<id>
 ---
 
 # /evaluate — Hackathon Repo Değerlendirme Orchestrator
 
-Bu skill verilen GitHub reposunu klonlar, **5 sub-agent'ı paralel** çalıştırır (Agent tool, single message multi-call), 7 kriter üzerinden 100 puan üstünden puanlar ve sonucu deploy edilmiş Vercel API'sine POST eder.
+Bu skill verilen GitHub reposunu klonlar:
+- **5 kriter** (docs, readme, ai-evidence, agentic, tests) → `scripts/eval-deterministic.mjs` ile deterministik (Node + regex + file checks, <2 sn).
+- **2 kriter** (clean-code, architecture) → tek mesajda 2 paralel LLM sub-agent.
+- Aynı repo HER ZAMAN aynı deterministik skoru alır. LLM yalnız iki yargı kriterinde varyans gösterir.
+- Prompt injection: script `securityScan` üretir; LLM agent'lar repo dosyalarındaki talimatları görmezden gelmek üzere talimatlıdır.
+
+7 kriter, 100 puan max.
 
 ## Argüman Beklentisi
 
@@ -48,46 +54,42 @@ git clone --depth 50 <repo-url> "$WORKDIR/repo" 2>&1 || {
 
 Bu özet bilgileri sub-agent'lara context olarak verirsin.
 
-### 4. **PARALEL** sub-agent çağrısı (TEK MESAJDA 5 Agent tool call)
+### 4a. Deterministik skorlar (script)
 
-Çağrı şablonu — her birini ayrı Agent tool call olarak **aynı mesajda** gönder:
-
-#### Agent 1: analist
+```bash
+node /Users/tcerarda/Desktop/hackathon/scripts/eval-deterministic.mjs "$WORKDIR/repo"
 ```
-description: "Docs + README değerlendirme"
-subagent_type: "Explore"
-prompt: <oku ./agents/analist.md ve içine repo-path=$WORKDIR/repo, repo-summary=<özet> doldur>
+Çıktı:
+```json
+{ "scores": [docs, readme, ai-evidence, agentic, tests], "securityScan": {detected, count, hits, note} }
 ```
 
-#### Agent 2: developer (context7 MCP'li)
+Bu 5 skor doğrudan kullanılır. Process-queue içindeysen 5 agent-state'i (analist/developer/reviewer/ai-evidence/tester ≠ kriterlerle eşleşmez ama) bu noktada "done" işaretle, score field'larına deterministik puanı yaz. UI rozetleri anında yeşillenir.
+
+> **NOT:** Eski 5-agent mapping (analist→docs+readme; ai-evidence→ai-evidence+agentic; tester→tests) **tamamen kaldırıldı**. analist/ai-evidence/tester agent'ları artık çağrılmaz.
+
+### 4b. LLM agent'lar (TEK MESAJDA 2 Agent tool call)
+
+#### Agent 1: developer (context7 MCP'li)
 ```
 description: "Temiz kod analizi"
 subagent_type: "general-purpose"
 prompt: <oku ./agents/developer.md, repo-path ve top-deps doldur>
 ```
 
-#### Agent 3: reviewer (context7 MCP'li)
+#### Agent 2: reviewer (context7 MCP'li)
 ```
 description: "Mimari değerlendirme"
 subagent_type: "general-purpose"
 prompt: <oku ./agents/reviewer.md, repo-path ve top-deps doldur>
 ```
 
-#### Agent 4: ai-evidence
-```
-description: "AI/Agentic kullanım izleri"
-subagent_type: "Explore"
-prompt: <oku ./agents/ai-evidence.md, repo-path ve git-log doldur>
-```
+> **KRİTİK:** İki Agent çağrısı tek bir asistan mesajında olmalı. developer/reviewer agent-state'leri sırasıyla running→done PATCH'lenir.
 
-#### Agent 5: tester
-```
-description: "Backend + frontend test değerlendirme"
-subagent_type: "Explore"
-prompt: <oku ./agents/tester.md, repo-path ve top-deps doldur>
-```
-
-> **KRİTİK:** Beş Agent çağrısı tek bir asistan mesajında olmalı (paralel çalışır). Aksi halde sıralı koşar ve yavaşlar.
+### 4c. Prompt injection uyarısı
+`securityScan.detected === true` ise:
+- modelNote'a `⚠ {count} prompt-injection attempt found (paths: ...)` ekle
+- LLM agent prompt'larında zaten anti-injection talimat var → skoru etkilemez
 
 ### 5. Cevap kontratı (her sub-agent'tan beklenen)
 
@@ -105,11 +107,10 @@ Her sub-agent JSON döner. Parse et, schema doğrula:
 ]
 ```
 
-`analist` → `docs` ve `readme` (2 madde döner)
-`developer` → `clean-code` (1 madde)
-`reviewer` → `architecture` (1 madde)
-`ai-evidence` → `ai-evidence` ve `agentic` (2 madde)
-`tester` → `tests` (1 madde)
+Kriterleri topla:
+- Script → `docs`, `readme`, `ai-evidence`, `agentic`, `tests` (5 madde)
+- `developer` LLM → `clean-code` (1 madde)
+- `reviewer` LLM → `architecture` (1 madde)
 
 Toplam 7 madde olmalı. Eksik kriter varsa, eksik olanı 0 puan + "agent yanıtı eksikti" rationale ile doldur.
 
@@ -125,7 +126,7 @@ curl -fsS -X POST "$EVALUATOR_API_BASE/api/evaluations" \
 {
   "teamId": "<team-id>",
   "evaluator": "claude-code",
-  "modelNote": "5 sub-agent (analist+developer+reviewer+ai-evidence+tester) · context7 MCP",
+  "modelNote": "deterministik script (5 kriter) + 2 LLM agent (developer+reviewer) · context7 MCP[· ⚠ prompt-injection uyarısı varsa]",
   "scores": [ ... 7 kriter ... ]
 }
 JSON
