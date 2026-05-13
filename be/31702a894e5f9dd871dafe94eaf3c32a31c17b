@@ -1,0 +1,19 @@
+docs/jury-guide.md
+  s_4640582183558b::t_0e4e54e4ebbea3 1-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "be31702a894e5f9dd871dafe94eaf3c32a31c17b",
+  "prompts": {},
+  "sessions": {
+    "s_4640582183558b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "106ed4a0-91a4-4909-836c-b3c691714845",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
