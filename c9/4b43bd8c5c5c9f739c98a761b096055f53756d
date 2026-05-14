@@ -1,0 +1,32 @@
+scripts/eval-deterministic.mjs
+  s_3db8c588c038af::t_07ee8cdc2768c7 203-230
+  s_3db8c588c038af::t_b235ea9c5cf779 275,283-284
+  s_3db8c588c038af::t_afe1424ae61409 292,299
+  s_3db8c588c038af::t_4daba77dbe1ec7 368-389
+  s_3db8c588c038af::t_d74b9be62db769 307-309,311-321,323-326,330-332
+  s_3db8c588c038af::t_3ffe3112b4c3e2 310,322,327-329,333-334
+  s_3db8c588c038af::t_4425564f6b4dda 407,417
+  s_3db8c588c038af::t_e3c8cb3ae9c7ec 411,413
+  s_3db8c588c038af::t_d200651eb820a0 190-201
+  s_3db8c588c038af::t_a5b27cdd1f9044 232,236,239
+apps/web/app/api/evaluations/route.ts
+  s_3db8c588c038af::t_6f6620407d18fc 66
+  s_3db8c588c038af::t_6302c1a5596687 98
+  s_3db8c588c038af::t_baad229c1b6027 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "c94b43bd8c5c5c9f739c98a761b096055f53756d",
+  "prompts": {},
+  "sessions": {
+    "s_3db8c588c038af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd23c9d1-c6fe-41fa-9d30-f7b7ef776f2c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
