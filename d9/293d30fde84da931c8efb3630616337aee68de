@@ -1,0 +1,21 @@
+apps/web/app/api/evaluations/route.ts
+  s_3db8c588c038af::t_aa0ce6d5861556 73
+  s_3db8c588c038af::t_ea7495a9d91db6 66
+  s_3db8c588c038af::t_d4faf8ae02d4b9 98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "d9293d30fde84da931c8efb3630616337aee68de",
+  "prompts": {},
+  "sessions": {
+    "s_3db8c588c038af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd23c9d1-c6fe-41fa-9d30-f7b7ef776f2c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
