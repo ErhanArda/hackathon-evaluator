@@ -96,11 +96,13 @@ export default async function TeamDetail({
                   </div>
                   <ul className="mt-2 space-y-1 text-xs font-mono">
                     {commits.map((c, i) => {
-                      const d = new Date(c.when);
+                      // Parse TR time from ISO string (e.g. "2026-05-14T17:39:51+03:00")
+                      const m = c.when.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+                      const timeStr = m ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}:${m[6]}` : c.when;
                       return (
                         <li key={i} className="flex items-center gap-2">
                           <a href={`${repoUrl}/commit/${c.hash}`} target="_blank" rel="noreferrer" className="rounded bg-red-100 px-1 hover:bg-red-200 hover:underline">{c.hash}</a>
-                          <span className="font-semibold">{d.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium", timeZone: "Europe/Istanbul" })}</span>
+                          <span className="font-semibold">{timeStr}</span>
                           {c.message && <span className="text-red-500 truncate">{c.message}</span>}
                         </li>
                       );

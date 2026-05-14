@@ -95,21 +95,21 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
           )}
         </div>
       </div>
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-sm table-fixed">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        <table className="w-full text-sm" style={{ minWidth: "900px" }}>
           <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
             <tr>
-              <th className="px-1 py-2 w-6"></th>
-              <th className="px-1 py-2 w-7">#</th>
-              <th className="px-2 py-2 w-[18%]">Takım</th>
-              <th className="px-1 py-2 w-12" title="Tıkla → Excel için kopyala">/10</th>
-              <th className="px-1 py-2 w-14">Toplam</th>
+              <th className="px-2 py-3 w-8"></th>
+              <th className="px-2 py-3 w-10">#</th>
+              <th className="px-3 py-3">Takım</th>
+              <th className="px-3 py-3 w-16" title="Tıkla → Excel için kopyala">/10</th>
+              <th className="px-3 py-3 w-20">Toplam</th>
               {CRITERIA.map((c) => (
-                <th key={c.key} className="px-1 py-2 text-center truncate" title={c.label}>
+                <th key={c.key} className="px-2 py-3 w-16 text-center" title={c.label}>
                   {c.key === "ai-evidence" ? "AI" : c.key === "agentic" ? "Agnt" : c.key === "clean-code" ? "Kod" : c.key === "architecture" ? "Mim" : c.key === "docs" ? "Docs" : c.key === "readme" ? "Rdm" : "Test"}
                 </th>
               ))}
-              <th className="px-1 py-2 w-12"></th>
+              <th className="px-2 py-3 w-14"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
@@ -133,12 +133,12 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
                   } ${(row.evaluation?.latePenalty ?? 0) > 0 ? "outline outline-2 outline-red-500 outline-offset-[-2px] bg-red-50/40" : ""}`}
                   title={(row.evaluation?.latePenalty ?? 0) > 0 ? `Geç commit cezası: -${row.evaluation?.latePenalty} puan` : undefined}
                 >
-                  <td className="cursor-grab select-none px-1 text-slate-400" title="Sürükle">
+                  <td className="cursor-grab select-none px-2 text-slate-400" title="Sürükle">
                     ⋮⋮
                   </td>
-                  <td className="px-1 py-2 font-medium text-slate-500">{rank}</td>
-                  <td className="px-2 py-2">
-                    <div className="font-medium truncate">{row.team.name}</div>
+                  <td className="px-2 py-3 font-medium text-slate-500">{rank}</td>
+                  <td className="px-3 py-3">
+                    <div className="font-medium">{row.team.name}</div>
                     <a
                       href={row.team.repoUrl}
                       target="_blank"
@@ -149,7 +149,7 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
                       {row.team.repoUrl.replace(/^https?:\/\/(github\.com\/)?/, "")}
                     </a>
                   </td>
-                  <td className="px-1 py-2">
+                  <td className="px-3 py-3">
                     {row.totalScore != null ? (() => {
                       const v = (normalize100(row.totalScore, row.maxScore) / 10).toFixed(1);
                       const cls = rankColor(row.totalScore, row.maxScore);
@@ -175,11 +175,11 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
                       );
                     })() : <span className="text-slate-400">—</span>}
                   </td>
-                  <td className="px-1 py-2">
+                  <td className="px-3 py-3">
                     <ScoreBadge score={row.totalScore} max={row.maxScore} size="lg" />
                   </td>
                   {CRITERIA.map((c) => (
-                    <td key={c.key} className="px-1 py-2 text-center">
+                    <td key={c.key} className="px-2 py-3 text-center">
                       <ScoreBadge
                         score={row.scoresByCriterion[c.key] ?? null}
                         max={c.max}
@@ -187,7 +187,7 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
                       />
                     </td>
                   ))}
-                  <td className="px-1 py-2 text-right">
+                  <td className="px-2 py-3 text-right">
                     <Link
                       href={`/teams/${row.team.id}`}
                       onMouseDown={(e) => e.stopPropagation()}
