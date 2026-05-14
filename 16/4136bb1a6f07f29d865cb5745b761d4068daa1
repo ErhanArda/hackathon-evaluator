@@ -1,0 +1,23 @@
+apps/web/app/teams/[id]/page.tsx
+  s_3db8c588c038af::t_0e27c3d17d9d81 99-101,105
+apps/web/components/LeaderboardTable.tsx
+  s_3db8c588c038af::t_85b2fcd2fbf34b 98-99,102-106,108,112
+  s_3db8c588c038af::t_35799ff10f037d 136,139-141,152
+  s_3db8c588c038af::t_32974d8f490b39 178,182,190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "164136bb1a6f07f29d865cb5745b761d4068daa1",
+  "prompts": {},
+  "sessions": {
+    "s_3db8c588c038af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd23c9d1-c6fe-41fa-9d30-f7b7ef776f2c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
