@@ -158,37 +158,67 @@ function scoreAiEvidence() {
   const ratio = totalCommits > 0 ? coAuthorCount / totalCommits : 0;
   evidence.push({ path: "git-log", lines: null, note: `${coAuthorCount}/${totalCommits} commit co-author satırı (${(ratio * 100).toFixed(0)}%)` });
 
-  // .claude / .cursor / .github/copilot-instructions
-  const hasClaude = exists(".claude");
-  const hasCursor = exists(".cursor");
-  const hasCopilot = exists(".github/copilot-instructions.md");
-  evidence.push({ path: ".claude/", lines: null, note: hasClaude ? "var" : "yok" });
-  if (hasCursor) evidence.push({ path: ".cursor/", lines: null, note: "var" });
-  if (hasCopilot) evidence.push({ path: ".github/copilot-instructions.md", lines: null, note: "var" });
+  // AI yapılandırma klasörü/dosyaları — Claude/Cursor/Copilot/Codex/Gemini/Aider/Continue/Windsurf/Codeium vb.
+  const aiConfigCandidates = [
+    ".claude",
+    ".cursor",
+    ".cursorrules",
+    ".github/copilot-instructions.md",
+    ".codex",
+    ".gemini",
+    "GEMINI.md",
+    "AGENTS.md",
+    ".aider.conf.yml",
+    ".aider.conf",
+    ".aiderrc",
+    ".continue",
+    ".windsurf",
+    ".codeium",
+    ".codeiumignore",
+    ".devin",
+    ".tabnine",
+    ".jetbrains-ai",
+    ".zed",
+  ];
+  const aiConfigFound = aiConfigCandidates.filter((p) => exists(p));
+  evidence.push({
+    path: "AI config",
+    lines: null,
+    note: aiConfigFound.length > 0 ? `bulunan: ${aiConfigFound.join(", ")}` : "yok (.claude/.cursor/.codex/.gemini/Copilot/Aider/Continue/Windsurf/Codeium ... hiçbiri)",
+  });
 
-  // README AI tool listesi
-  const aiToolMatch = /(claude code|cursor|copilot|chatgpt|anthropic|ai tools? used|ai-?assist)/i.test(readme);
+  // README AI tool listesi (geniş set)
+  const aiToolMatch = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|continue\.dev|windsurf|codeium|devin|tabnine|jetbrains\s*ai|zed\s*ai|ai\s+tools?\s+used|ai-?assist)/i.test(readme);
   evidence.push({ path: "README.md", lines: null, note: aiToolMatch ? "AI tool listesi var" : "AI tool listesi yok" });
 
-  // CLAUDE.md substantive (>500 byte)
-  const claudeMd = readSafe("CLAUDE.md");
-  const substantiveClaudeMd = claudeMd.length > 500;
-  if (claudeMd.length > 0) evidence.push({ path: "CLAUDE.md", lines: null, note: `${claudeMd.length} byte${substantiveClaudeMd ? "" : " (placeholder)"}` });
+  // Proje context dosyası (Claude/Cursor/Codex/Gemini/Copilot tarzı)
+  const contextFileCandidates = ["CLAUDE.md", "CURSOR.md", "AGENTS.md", "GEMINI.md", "CODEX.md", "COPILOT.md", ".cursorrules"];
+  const contextFiles = contextFileCandidates.map((p) => ({ path: p, content: readSafe(p) })).filter((x) => x.content.length > 0);
+  const totalContextBytes = contextFiles.reduce((s, x) => s + x.content.length, 0);
+  const substantiveContext = totalContextBytes > 500;
+  if (contextFiles.length > 0) {
+    evidence.push({
+      path: "context file(s)",
+      lines: null,
+      note: `${contextFiles.map((x) => `${x.path}=${x.content.length}b`).join(", ")}${substantiveContext ? "" : " (toplam placeholder)"}`,
+    });
+  } else {
+    evidence.push({ path: "context file", lines: null, note: "CLAUDE.md/CURSOR.md/AGENTS.md/GEMINI.md vb. hiçbiri yok" });
+  }
 
   // prompts/ archive
-  const hasPrompts = exists("prompts") || exists("ai-logs") || exists("conversations");
-  if (hasPrompts) evidence.push({ path: "prompts|ai-logs|conversations", lines: null, note: "var" });
+  const hasPrompts = exists("prompts") || exists("ai-logs") || exists("conversations") || exists("ai-history");
+  if (hasPrompts) evidence.push({ path: "prompts|ai-logs|conversations|ai-history", lines: null, note: "var" });
 
   // Skorlama
-  // Co-author ratio:
-  // ≥30% → +8, 10-30% → +5, >0% → +2, 0 → 0
+  // Co-author ratio: ≥30% → +8, 10-30% → +5, >0% → +2, 0 → 0
   if (ratio >= 0.30) score += 8;
   else if (ratio >= 0.10) score += 5;
   else if (coAuthorCount > 0) score += 2;
-  // .claude veya .cursor veya copilot config: +4
-  if (hasClaude || hasCursor || hasCopilot) score += 4;
-  // Substantive CLAUDE.md: +3
-  if (substantiveClaudeMd) score += 3;
+  // AI config klasör/dosya (Claude/Cursor/Codex/Gemini/Copilot/Aider/Continue/Windsurf/Codeium ...): +4
+  if (aiConfigFound.length > 0) score += 4;
+  // Substantive context dosyası (CLAUDE.md/CURSOR.md/AGENTS.md/GEMINI.md vb. toplam >500b): +3
+  if (substantiveContext) score += 3;
   // README'de AI tool listesi: +4
   if (aiToolMatch) score += 4;
   // Prompt arşivi: +2 bonus
@@ -199,7 +229,7 @@ function scoreAiEvidence() {
     criterion: "ai-evidence",
     score,
     max: 20,
-    rationale: `${coAuthorCount}/${totalCommits} co-author commit (${(ratio*100).toFixed(0)}%); .claude=${hasClaude}, .cursor=${hasCursor}, CLAUDE.md=${claudeMd.length}b, README'de AI tool=${aiToolMatch}, prompts/=${hasPrompts}.`,
+    rationale: `${coAuthorCount}/${totalCommits} co-author (${(ratio*100).toFixed(0)}%); AI config: ${aiConfigFound.length>0?aiConfigFound.join("+"):"yok"}; context: ${contextFiles.length>0?contextFiles.map(x=>x.path).join("+")+` (${totalContextBytes}b)`:"yok"}; README'de AI tool=${aiToolMatch}; prompts=${hasPrompts}.`,
     evidence,
   };
 }
@@ -209,52 +239,91 @@ function scoreAgentic() {
   const evidence = [];
   let score = 0;
 
-  const hasClaudeAgents = exists(".claude/agents");
-  const hasClaudeSkills = exists(".claude/skills");
-  const hasClaudeCommands = exists(".claude/commands");
-  const hasMcp = exists(".mcp.json") || exists("mcp.json") || exists("claude_desktop_config.json");
-
-  // Hangi MCP'ler?
-  let mcpServers = [];
-  if (hasMcp) {
-    const mcpPath = exists(".mcp.json") ? ".mcp.json" : exists("mcp.json") ? "mcp.json" : "claude_desktop_config.json";
-    try {
-      const parsed = JSON.parse(readSafe(mcpPath));
-      mcpServers = Object.keys(parsed.mcpServers || parsed.servers || {});
-    } catch {}
-  }
-
-  // Agent + skill sayıları
+  // Agent tanımı klasörleri (Claude/Cursor/Codex/Gemini vb.)
+  const agentDirCandidates = [
+    ".claude/agents",
+    ".cursor/agents",
+    ".codex/agents",
+    ".gemini/agents",
+    ".continue/agents",
+    ".windsurf/agents",
+  ];
+  const agentDirs = agentDirCandidates.filter((p) => exists(p));
   let agentCount = 0;
-  let skillCount = 0;
-  if (hasClaudeAgents) {
-    try { agentCount = readdirSync(join(repo, ".claude/agents")).filter((f) => f.endsWith(".md")).length; } catch {}
+  for (const d of agentDirs) {
+    try { agentCount += readdirSync(join(repo, d)).filter((f) => /\.(md|json|ya?ml)$/.test(f)).length; } catch {}
   }
-  if (hasClaudeSkills) {
+
+  // Skill tanımı klasörleri
+  const skillDirCandidates = [
+    ".claude/skills",
+    ".cursor/skills",
+    ".codex/skills",
+    ".gemini/skills",
+    ".continue/skills",
+  ];
+  const skillDirs = skillDirCandidates.filter((p) => exists(p));
+  let skillCount = 0;
+  for (const d of skillDirs) {
+    try { skillCount += readdirSync(join(repo, d)).length; } catch {}
+  }
+
+  // Slash command / workflow tanımları
+  const commandDirCandidates = [".claude/commands", ".cursor/commands", ".codex/commands", ".gemini/commands"];
+  const commandDirs = commandDirCandidates.filter((p) => exists(p));
+
+  // MCP konfigürasyonu — birden çok yol
+  const mcpFileCandidates = [
+    ".mcp.json",
+    "mcp.json",
+    "claude_desktop_config.json",
+    ".cursor/mcp.json",
+    ".codex/mcp.json",
+    ".gemini/mcp.json",
+    ".continue/mcp.json",
+    ".windsurf/mcp.json",
+  ];
+  const mcpFiles = mcpFileCandidates.filter((p) => exists(p));
+  let mcpServers = [];
+  for (const p of mcpFiles) {
     try {
-      const entries = readdirSync(join(repo, ".claude/skills"));
-      skillCount = entries.length;
+      const parsed = JSON.parse(readSafe(p));
+      const keys = Object.keys(parsed.mcpServers || parsed.servers || parsed.mcp_servers || {});
+      mcpServers.push(...keys);
     } catch {}
   }
+  mcpServers = [...new Set(mcpServers)];
 
-  // settings.json hooks
-  const hasHooks = exists(".claude/settings.json") && /\"hooks\"/.test(readSafe(".claude/settings.json"));
+  // Hooks — Claude veya Cursor settings içinde
+  const hooksCandidates = [".claude/settings.json", ".cursor/settings.json", ".codex/settings.json"];
+  let hasHooks = false;
+  for (const p of hooksCandidates) {
+    if (exists(p) && /["']?hooks["']?\s*:/.test(readSafe(p))) { hasHooks = true; break; }
+  }
 
-  evidence.push({ path: ".claude/agents/", lines: null, note: hasClaudeAgents ? `${agentCount} agent` : "yok" });
-  evidence.push({ path: ".claude/skills/", lines: null, note: hasClaudeSkills ? `${skillCount} skill` : "yok" });
-  if (hasClaudeCommands) evidence.push({ path: ".claude/commands/", lines: null, note: "var" });
-  evidence.push({ path: ".mcp.json", lines: null, note: hasMcp ? `MCP'ler: ${mcpServers.join(", ") || "tanımsız"}` : "yok" });
-  if (hasHooks) evidence.push({ path: ".claude/settings.json", lines: null, note: "hooks tanımlı" });
+  evidence.push({
+    path: "agent klasörü",
+    lines: null,
+    note: agentDirs.length > 0 ? `${agentDirs.join(", ")} (${agentCount} dosya)` : "yok",
+  });
+  evidence.push({
+    path: "skill klasörü",
+    lines: null,
+    note: skillDirs.length > 0 ? `${skillDirs.join(", ")} (${skillCount} dosya)` : "yok",
+  });
+  if (commandDirs.length > 0) evidence.push({ path: "command klasörü", lines: null, note: commandDirs.join(", ") });
+  evidence.push({
+    path: "MCP config",
+    lines: null,
+    note: mcpFiles.length > 0 ? `${mcpFiles.join(", ")} → MCP'ler: ${mcpServers.join(", ") || "tanımsız"}` : "yok",
+  });
+  if (hasHooks) evidence.push({ path: "hooks", lines: null, note: "tanımlı" });
 
   // Skorlama:
-  // agent veya skill varsa: +8 (her biri +4)
-  if (hasClaudeAgents) score += 4 + Math.min(agentCount, 4); // 4-8
-  if (hasClaudeSkills) score += 4 + Math.min(skillCount, 4); // 4-8
-  // MCP config varsa: +4 (+1 per server up to +2)
-  if (hasMcp) score += 4 + Math.min(mcpServers.length, 2);
-  // commands varsa: +1
-  if (hasClaudeCommands) score += 1;
-  // hooks varsa: +1
+  if (agentDirs.length > 0) score += 4 + Math.min(agentCount, 4);
+  if (skillDirs.length > 0) score += 4 + Math.min(skillCount, 4);
+  if (mcpFiles.length > 0) score += 4 + Math.min(mcpServers.length, 2);
+  if (commandDirs.length > 0) score += 1;
   if (hasHooks) score += 1;
 
   score = Math.min(score, 20);
@@ -262,7 +331,7 @@ function scoreAgentic() {
     criterion: "agentic",
     score,
     max: 20,
-    rationale: `.claude/agents=${hasClaudeAgents ? agentCount : 0}, .claude/skills=${hasClaudeSkills ? skillCount : 0}, MCP=${hasMcp ? mcpServers.join(",") || "var" : "yok"}, hooks=${hasHooks}.`,
+    rationale: `agent klasörü=${agentDirs.length>0?agentDirs.join("+")+`(${agentCount})`:"yok"}, skill=${skillDirs.length>0?skillDirs.join("+")+`(${skillCount})`:"yok"}, MCP=${mcpFiles.length>0?mcpServers.join(",")||"var":"yok"}, hooks=${hasHooks}.`,
     evidence,
   };
 }
