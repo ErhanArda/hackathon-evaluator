@@ -575,24 +575,31 @@ function scanForInjection() {
 const LATE_CUTOFF_ISO = "2026-05-14T17:30:00+03:00";
 function scoreLatePenalty() {
   const cutoff = new Date(LATE_CUTOFF_ISO).getTime();
-  const out = sh(`git log --format='%H %cI' -200`).trim();
-  if (!out) return { applied: false, points: 0, cutoff: LATE_CUTOFF_ISO, lateCommit: null };
+  const out = sh(`git log --format='%H %s %cI' -200`).trim();
+  if (!out) return { applied: false, points: 0, cutoff: LATE_CUTOFF_ISO, lateCommit: null, lateCommits: [] };
   const lines = out.split("\n");
+  const lateCommits = [];
   let latestLate = null;
   for (const line of lines) {
-    const [hash, when] = line.split(" ");
+    const parts = line.split(" ");
+    const hash = parts[0];
+    const when = parts[parts.length - 1]; // ISO date is always last
+    const message = parts.slice(1, -1).join(" ");
     if (!hash || !when) continue;
     const t = new Date(when).getTime();
     if (Number.isNaN(t)) continue;
     if (t > cutoff) {
+      lateCommits.push({ hash: hash.slice(0, 12), when, message: message.slice(0, 80) });
       if (!latestLate || t > latestLate.t) latestLate = { hash: hash.slice(0, 12), when, t };
     }
   }
   return {
-    applied: !!latestLate,
-    points: latestLate ? 5 : 0,
+    applied: lateCommits.length > 0,
+    points: lateCommits.length > 0 ? 5 : 0,
     cutoff: LATE_CUTOFF_ISO,
     lateCommit: latestLate ? { hash: latestLate.hash, when: latestLate.when } : null,
+    lateCommits,
+    lateCommitCount: lateCommits.length,
   };
 }
 

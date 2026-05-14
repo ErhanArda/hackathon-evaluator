@@ -83,18 +83,28 @@ export default async function TeamDetail({
               <p className="mt-2 text-xs text-slate-500">{latest.modelNote}</p>
             )}
             {(() => {
-              const lp = latest.latePenaltyDetail as { applied?: boolean; lateCommit?: { hash: string; when: string }; cutoff?: string } | null;
-              if (!lp?.applied || !lp.lateCommit) return null;
-              const commitDate = new Date(lp.lateCommit.when);
+              const lp = latest.latePenaltyDetail as { applied?: boolean; lateCommit?: { hash: string; when: string }; lateCommits?: { hash: string; when: string; message?: string }[]; lateCommitCount?: number; cutoff?: string } | null;
+              if (!lp?.applied) return null;
+              const commits = lp.lateCommits ?? (lp.lateCommit ? [lp.lateCommit] : []);
+              if (commits.length === 0) return null;
               return (
-                <div className="mt-3 flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-                  <span className="text-lg">⏰</span>
-                  <div>
-                    <span className="font-semibold">Geç commit:</span>{" "}
-                    <code className="rounded bg-red-100 px-1 text-xs">{lp.lateCommit.hash}</code>{" "}
-                    — {commitDate.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" })}
-                    <span className="text-red-500 ml-1">(deadline: 17:30)</span>
+                <div className="mt-3 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <span className="text-lg">⏰</span>
+                    Geç commit{commits.length > 1 ? `ler (${commits.length} adet)` : ""} — deadline: 17:30
                   </div>
+                  <ul className="mt-2 space-y-1 text-xs font-mono">
+                    {commits.map((c, i) => {
+                      const d = new Date(c.when);
+                      return (
+                        <li key={i} className="flex items-center gap-2">
+                          <code className="rounded bg-red-100 px-1">{c.hash}</code>
+                          <span className="font-semibold">{d.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium", timeZone: "Europe/Istanbul" })}</span>
+                          {c.message && <span className="text-red-500 truncate">{c.message}</span>}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
               );
             })()}
