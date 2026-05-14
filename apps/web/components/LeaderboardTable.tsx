@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { LeaderRow } from "@/lib/queries";
 import { CRITERIA } from "@/lib/criteria";
 import { ScoreBadge } from "./ScoreBadge";
-import { normalize100 } from "@/lib/scoring";
+import { normalize100, rankColor } from "@/lib/scoring";
 
 export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
   const router = useRouter();
@@ -102,8 +102,8 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
               <th className="px-3 py-3 w-8"></th>
               <th className="px-3 py-3 w-10">#</th>
               <th className="px-3 py-3">Takım</th>
-              <th className="px-3 py-3">Toplam</th>
               <th className="px-3 py-3" title="Tıkla → Excel için kopyala">/10</th>
+              <th className="px-3 py-3">Toplam</th>
               {CRITERIA.map((c) => (
                 <th key={c.key} className="px-3 py-3 whitespace-nowrap" title={c.label}>
                   {c.label.split(" ")[0]}
@@ -149,11 +149,9 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
                     </a>
                   </td>
                   <td className="px-3 py-3">
-                    <ScoreBadge score={row.totalScore} max={row.maxScore} size="lg" />
-                  </td>
-                  <td className="px-3 py-3">
                     {row.totalScore != null ? (() => {
                       const v = (normalize100(row.totalScore, row.maxScore) / 10).toFixed(1);
+                      const cls = rankColor(row.totalScore, row.maxScore);
                       return (
                         <button
                           type="button"
@@ -164,17 +162,20 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
                               await navigator.clipboard.writeText(v);
                               const btn = e.currentTarget;
                               const orig = btn.textContent;
-                              btn.textContent = "✓ kopyalandı";
+                              btn.textContent = "✓";
                               setTimeout(() => { btn.textContent = orig; }, 1200);
                             } catch {}
                           }}
                           title="Tıkla → panoya kopyala (Excel için)"
-                          className="rounded px-2 py-1 text-sm font-medium text-slate-700 hover:bg-slate-100 active:bg-slate-200 cursor-pointer"
+                          className={`inline-flex items-center rounded-md px-3 py-1.5 text-base font-semibold cursor-pointer hover:brightness-95 active:brightness-90 ${cls}`}
                         >
                           {v}
                         </button>
                       );
                     })() : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="px-3 py-3">
+                    <ScoreBadge score={row.totalScore} max={row.maxScore} size="lg" />
                   </td>
                   {CRITERIA.map((c) => (
                     <td key={c.key} className="px-3 py-3">
