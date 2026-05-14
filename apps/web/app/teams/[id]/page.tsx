@@ -87,6 +87,7 @@ export default async function TeamDetail({
               if (!lp?.applied) return null;
               const commits = lp.lateCommits ?? (lp.lateCommit ? [lp.lateCommit] : []);
               if (commits.length === 0) return null;
+              const repoUrl = detail.team.repoUrl.replace(/\.git$/, "");
               return (
                 <div className="mt-3 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
                   <div className="flex items-center gap-2 font-semibold">
@@ -98,7 +99,7 @@ export default async function TeamDetail({
                       const d = new Date(c.when);
                       return (
                         <li key={i} className="flex items-center gap-2">
-                          <code className="rounded bg-red-100 px-1">{c.hash}</code>
+                          <a href={`${repoUrl}/commit/${c.hash}`} target="_blank" rel="noreferrer" className="rounded bg-red-100 px-1 hover:bg-red-200 hover:underline">{c.hash}</a>
                           <span className="font-semibold">{d.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium", timeZone: "Europe/Istanbul" })}</span>
                           {c.message && <span className="text-red-500 truncate">{c.message}</span>}
                         </li>
