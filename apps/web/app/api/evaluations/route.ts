@@ -63,14 +63,14 @@ export async function POST(req: NextRequest) {
   }
   const rawTotal = body.scores.reduce((sum, s) => sum + s.score, 0);
   const penaltyPoints = body.latePenalty?.applied ? (body.latePenalty.points ?? 0) : 0;
-  const total = rawTotal; // penalty skoru düşürmez, max'ı düşürür
+  const total = rawTotal; // late penalty skoru etkilemez, sadece UI'da kırmızı border
 
   const evalId = nanoid(12);
   await db.insert(schema.evaluations).values({
     id: evalId,
     teamId: body.teamId,
     totalScore: total,
-    maxScore: TOTAL_MAX - penaltyPoints, // late penalty max'ı düşürür (100→95)
+    maxScore: TOTAL_MAX,
     evaluator: body.evaluator ?? "claude-code",
     modelNote: body.modelNote ?? null,
     securityScan: body.securityScan ?? null,
@@ -95,5 +95,5 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ id: evalId, totalScore: total, maxScore: TOTAL_MAX - penaltyPoints }, { status: 201 });
+  return NextResponse.json({ id: evalId, totalScore: total, maxScore: TOTAL_MAX }, { status: 201 });
 }
