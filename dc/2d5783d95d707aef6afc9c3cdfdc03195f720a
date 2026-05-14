@@ -1,0 +1,20 @@
+apps/web/components/LeaderboardTable.tsx
+  s_4640582183558b::t_4eaf4dc873b157 154-177
+  s_4640582183558b::t_5113f3e5ae2df0 106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "dc2d5783d95d707aef6afc9c3cdfdc03195f720a",
+  "prompts": {},
+  "sessions": {
+    "s_4640582183558b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "106ed4a0-91a4-4909-836c-b3c691714845",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
