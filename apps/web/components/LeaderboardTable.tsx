@@ -103,7 +103,7 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
               <th className="px-3 py-3 w-10">#</th>
               <th className="px-3 py-3">Takım</th>
               <th className="px-3 py-3">Toplam</th>
-              <th className="px-3 py-3">/100</th>
+              <th className="px-3 py-3" title="Tıkla → Excel için kopyala">/10</th>
               {CRITERIA.map((c) => (
                 <th key={c.key} className="px-3 py-3 whitespace-nowrap" title={c.label}>
                   {c.label.split(" ")[0]}
@@ -151,8 +151,30 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
                   <td className="px-3 py-3">
                     <ScoreBadge score={row.totalScore} max={row.maxScore} size="lg" />
                   </td>
-                  <td className="px-3 py-3 text-slate-600">
-                    {row.totalScore != null ? `${normalize100(row.totalScore, row.maxScore)}` : "—"}
+                  <td className="px-3 py-3">
+                    {row.totalScore != null ? (() => {
+                      const v = (normalize100(row.totalScore, row.maxScore) / 10).toFixed(1);
+                      return (
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              await navigator.clipboard.writeText(v);
+                              const btn = e.currentTarget;
+                              const orig = btn.textContent;
+                              btn.textContent = "✓ kopyalandı";
+                              setTimeout(() => { btn.textContent = orig; }, 1200);
+                            } catch {}
+                          }}
+                          title="Tıkla → panoya kopyala (Excel için)"
+                          className="rounded px-2 py-1 text-sm font-medium text-slate-700 hover:bg-slate-100 active:bg-slate-200 cursor-pointer"
+                        >
+                          {v}
+                        </button>
+                      );
+                    })() : <span className="text-slate-400">—</span>}
                   </td>
                   {CRITERIA.map((c) => (
                     <td key={c.key} className="px-3 py-3">
