@@ -1,0 +1,26 @@
+apps/web/components/LeaderboardTable.tsx
+  s_4640582183558b::t_34dfedabc10a23 133-134
+scripts/eval-deterministic.mjs
+  s_4640582183558b::t_3a6feec87b8e1b 483-508,518
+apps/web/app/api/evaluations/route.ts
+  s_4640582183558b::t_88a3716c462786 25-31,38
+  s_4640582183558b::t_a571578391c2c1 64-66,77-78
+apps/web/lib/schema.ts
+  s_4640582183558b::t_aac68521b6ec59 21-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "4f3895391609daa71424997e17a0195364ae7ecb",
+  "prompts": {},
+  "sessions": {
+    "s_4640582183558b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "106ed4a0-91a4-4909-836c-b3c691714845",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
