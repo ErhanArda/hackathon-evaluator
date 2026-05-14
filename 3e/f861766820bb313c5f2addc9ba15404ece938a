@@ -1,0 +1,19 @@
+apps/web/app/teams/[id]/page.tsx
+  s_3db8c588c038af::t_5884c7462a8adc 71,85-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "3ef861766820bb313c5f2addc9ba15404ece938a",
+  "prompts": {},
+  "sessions": {
+    "s_3db8c588c038af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd23c9d1-c6fe-41fa-9d30-f7b7ef776f2c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
