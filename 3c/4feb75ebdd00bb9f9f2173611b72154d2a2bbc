@@ -1,0 +1,21 @@
+apps/web/app/teams/[id]/page.tsx
+  s_3db8c588c038af::t_d4e4547597508c 86-89,91-94,96-107
+scripts/eval-deterministic.mjs
+  s_3db8c588c038af::t_bb995a6b0b188c 578-579,581,584-587,592,597-598,601-602
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "3c4feb75ebdd00bb9f9f2173611b72154d2a2bbc",
+  "prompts": {},
+  "sessions": {
+    "s_3db8c588c038af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd23c9d1-c6fe-41fa-9d30-f7b7ef776f2c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
