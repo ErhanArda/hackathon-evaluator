@@ -1,0 +1,20 @@
+scripts/eval-deterministic.mjs
+  s_4640582183558b::t_31469a5aacf08c 161-188,190-191,194-207,210-211,214,218-221,232
+  s_4640582183558b::t_fc15709c47940f 242-254,257-265,267-268,270-288,290-292,295,297-302,304-320,323-326,334
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "bbc60797aa0477fe32636c7146b677ea07c8e13b",
+  "prompts": {},
+  "sessions": {
+    "s_4640582183558b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "106ed4a0-91a4-4909-836c-b3c691714845",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "ErhanArda <erhanarda7@gmail.com>"
+    }
+  }
+}
