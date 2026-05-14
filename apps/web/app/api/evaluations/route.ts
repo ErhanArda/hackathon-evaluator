@@ -22,12 +22,20 @@ type SecurityScan = {
   note?: string;
 };
 
+type LatePenalty = {
+  applied?: boolean;
+  points?: number;
+  cutoff?: string;
+  lateCommit?: { hash?: string; when?: string } | null;
+};
+
 type IncomingBody = {
   teamId: string;
   evaluator?: string;
   modelNote?: string;
   scores: IncomingScore[];
   securityScan?: SecurityScan;
+  latePenalty?: LatePenalty;
 };
 
 export async function GET() {
@@ -53,7 +61,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "score/max/rationale required per item" }, { status: 400 });
     }
   }
-  const total = body.scores.reduce((sum, s) => sum + s.score, 0);
+  const rawTotal = body.scores.reduce((sum, s) => sum + s.score, 0);
+  const penaltyPoints = body.latePenalty?.applied ? (body.latePenalty.points ?? 0) : 0;
+  const total = Math.max(0, rawTotal - penaltyPoints);
 
   const evalId = nanoid(12);
   await db.insert(schema.evaluations).values({
@@ -64,6 +74,8 @@ export async function POST(req: NextRequest) {
     evaluator: body.evaluator ?? "claude-code",
     modelNote: body.modelNote ?? null,
     securityScan: body.securityScan ?? null,
+    latePenalty: penaltyPoints,
+    latePenaltyDetail: body.latePenalty ?? null,
   });
 
   for (const s of body.scores) {

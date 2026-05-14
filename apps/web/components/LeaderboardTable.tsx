@@ -130,7 +130,8 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
                   }}
                   className={`hover:bg-slate-50 ${isDragging ? "opacity-40" : ""} ${
                     isOver ? "border-t-2 border-slate-900" : ""
-                  }`}
+                  } ${(row.evaluation?.latePenalty ?? 0) > 0 ? "outline outline-2 outline-red-500 outline-offset-[-2px] bg-red-50/40" : ""}`}
+                  title={(row.evaluation?.latePenalty ?? 0) > 0 ? `Geç commit cezası: -${row.evaluation?.latePenalty} puan` : undefined}
                 >
                   <td className="cursor-grab select-none px-2 text-slate-400" title="Sürükle">
                     ⋮⋮

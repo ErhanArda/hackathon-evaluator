@@ -480,6 +480,32 @@ function scanForInjection() {
   };
 }
 
+// ---------- late-commit penalty ----------
+// Hackathon teslim deadline: 2026-05-14 17:30 (TR, +03). Sonrası -5.
+const LATE_CUTOFF_ISO = "2026-05-14T17:30:00+03:00";
+function scoreLatePenalty() {
+  const cutoff = new Date(LATE_CUTOFF_ISO).getTime();
+  const out = sh(`git log --format='%H %cI' -200`).trim();
+  if (!out) return { applied: false, points: 0, cutoff: LATE_CUTOFF_ISO, lateCommit: null };
+  const lines = out.split("\n");
+  let latestLate = null;
+  for (const line of lines) {
+    const [hash, when] = line.split(" ");
+    if (!hash || !when) continue;
+    const t = new Date(when).getTime();
+    if (Number.isNaN(t)) continue;
+    if (t > cutoff) {
+      if (!latestLate || t > latestLate.t) latestLate = { hash: hash.slice(0, 12), when, t };
+    }
+  }
+  return {
+    applied: !!latestLate,
+    points: latestLate ? 5 : 0,
+    cutoff: LATE_CUTOFF_ISO,
+    lateCommit: latestLate ? { hash: latestLate.hash, when: latestLate.when } : null,
+  };
+}
+
 const result = {
   scores: [
     scoreDocs(),
@@ -489,6 +515,7 @@ const result = {
     scoreTests(),
   ],
   securityScan: scanForInjection(),
+  latePenalty: scoreLatePenalty(),
 };
 
 console.log(JSON.stringify(result, null, 2));

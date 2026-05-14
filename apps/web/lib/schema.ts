@@ -18,6 +18,10 @@ export const evaluations = pgTable("evaluations", {
   modelNote: text("model_note"),
   // {detected: bool, count: int, hits: [{path,line,excerpt,pattern}], note: string}
   securityScan: jsonb("security_scan"),
+  // Geç commit cezası ham puanı (örn. 5 → totalScore'dan düşülmüş)
+  latePenalty: integer("late_penalty").default(0),
+  // {applied,points,cutoff,lateCommit:{hash,when}} — geç commit detayı
+  latePenaltyDetail: jsonb("late_penalty_detail"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
