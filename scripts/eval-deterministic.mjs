@@ -187,23 +187,56 @@ function scoreAiEvidence() {
     note: aiConfigFound.length > 0 ? `bulunan: ${aiConfigFound.join(", ")}` : "yok (.claude/.cursor/.codex/.gemini/Copilot/Aider/Continue/Windsurf/Codeium ... hiçbiri)",
   });
 
-  // README AI tool listesi (geniş set)
-  const aiToolMatch = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|continue\.dev|windsurf|codeium|devin|tabnine|jetbrains\s*ai|zed\s*ai|ai\s+tools?\s+used|ai-?assist)/i.test(readme);
-  evidence.push({ path: "README.md", lines: null, note: aiToolMatch ? "AI tool listesi var" : "AI tool listesi yok" });
+  // AI tool listesi — README + docs/ dosyalarında da ara
+  const aiToolRe = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|continue\.dev|windsurf|codeium|devin|tabnine|jetbrains\s*ai|zed\s*ai|ai\s+tools?\s+used|ai-?assist)/i;
+  const aiToolInReadme = aiToolRe.test(readme);
+  let aiToolInDocs = false;
+  if (exists("docs")) {
+    try {
+      const docMds = readdirSync(join(repo, "docs")).filter((f) => f.endsWith(".md"));
+      aiToolInDocs = docMds.some((f) => aiToolRe.test(readSafe(`docs/${f}`)));
+    } catch {}
+  }
+  const aiToolMatch = aiToolInReadme || aiToolInDocs;
+  evidence.push({ path: "README.md + docs/", lines: null, note: aiToolMatch ? `AI tool listesi var${aiToolInDocs && !aiToolInReadme ? " (docs/ içinde)" : ""}` : "AI tool listesi yok" });
 
-  // Proje context dosyası (Claude/Cursor/Codex/Gemini/Copilot tarzı)
-  const contextFileCandidates = ["CLAUDE.md", "CURSOR.md", "AGENTS.md", "GEMINI.md", "CODEX.md", "COPILOT.md", ".cursorrules"];
-  const contextFiles = contextFileCandidates.map((p) => ({ path: p, content: readSafe(p) })).filter((x) => x.content.length > 0);
-  const totalContextBytes = contextFiles.reduce((s, x) => s + x.content.length, 0);
+  // Proje context dosyası (Claude/Cursor/Codex/Gemini/Copilot tarzı) — root + docs/ + herhangi bir alt klasör
+  const contextFileNames = ["CLAUDE.md", "CURSOR.md", "AGENTS.md", "GEMINI.md", "CODEX.md", "COPILOT.md", ".cursorrules"];
+  const contextFiles = [];
+  // Root level
+  for (const p of contextFileNames) {
+    const c = readSafe(p);
+    if (c.length > 0) contextFiles.push({ path: p, content: c });
+  }
+  // docs/ altında da ara
+  if (exists("docs")) {
+    for (const p of contextFileNames) {
+      const dp = `docs/${p}`;
+      const c = readSafe(dp);
+      if (c.length > 0) contextFiles.push({ path: dp, content: c });
+    }
+    // docs/ içinde AI-related dosyalar (AI-WORKFLOW.md, ai-strategy.md, ai-collaboration.md vb.)
+    try {
+      const docFiles = readdirSync(join(repo, "docs")).filter((f) => /^ai[_-]/i.test(f) && f.endsWith(".md"));
+      for (const f of docFiles) {
+        const c = readSafe(`docs/${f}`);
+        if (c.length > 200) contextFiles.push({ path: `docs/${f}`, content: c });
+      }
+    } catch {}
+  }
+  // Deduplicate by path
+  const seenPaths = new Set();
+  const uniqueContextFiles = contextFiles.filter((x) => { if (seenPaths.has(x.path)) return false; seenPaths.add(x.path); return true; });
+  const totalContextBytes = uniqueContextFiles.reduce((s, x) => s + x.content.length, 0);
   const substantiveContext = totalContextBytes > 500;
-  if (contextFiles.length > 0) {
+  if (uniqueContextFiles.length > 0) {
     evidence.push({
       path: "context file(s)",
       lines: null,
-      note: `${contextFiles.map((x) => `${x.path}=${x.content.length}b`).join(", ")}${substantiveContext ? "" : " (toplam placeholder)"}`,
+      note: `${uniqueContextFiles.map((x) => `${x.path}=${x.content.length}b`).join(", ")}${substantiveContext ? "" : " (toplam placeholder)"}`,
     });
   } else {
-    evidence.push({ path: "context file", lines: null, note: "CLAUDE.md/CURSOR.md/AGENTS.md/GEMINI.md vb. hiçbiri yok" });
+    evidence.push({ path: "context file", lines: null, note: "CLAUDE.md/CURSOR.md/AGENTS.md/GEMINI.md vb. hiçbiri yok (root + docs/)" });
   }
 
   // prompts/ archive
@@ -239,7 +272,7 @@ function scoreAgentic() {
   const evidence = [];
   let score = 0;
 
-  // Agent tanımı klasörleri (Claude/Cursor/Codex/Gemini vb.)
+  // Agent tanımı klasörleri (Claude/Cursor/Codex/Gemini vb. + standalone .agents/)
   const agentDirCandidates = [
     ".claude/agents",
     ".cursor/agents",
@@ -247,6 +280,8 @@ function scoreAgentic() {
     ".gemini/agents",
     ".continue/agents",
     ".windsurf/agents",
+    ".agents",
+    "agents",
   ];
   const agentDirs = agentDirCandidates.filter((p) => exists(p));
   let agentCount = 0;
@@ -254,18 +289,47 @@ function scoreAgentic() {
     try { agentCount += readdirSync(join(repo, d)).filter((f) => /\.(md|json|ya?ml)$/.test(f)).length; } catch {}
   }
 
-  // Skill tanımı klasörleri
+  // Skill tanımı klasörleri (+ standalone .agents/skills)
   const skillDirCandidates = [
     ".claude/skills",
     ".cursor/skills",
     ".codex/skills",
     ".gemini/skills",
     ".continue/skills",
+    ".agents/skills",
   ];
   const skillDirs = skillDirCandidates.filter((p) => exists(p));
   let skillCount = 0;
   for (const d of skillDirs) {
     try { skillCount += readdirSync(join(repo, d)).length; } catch {}
+  }
+
+  // Repo genelinde AI/agentic dosya taraması (agent, skill, rule, subagent, workflow vb.)
+  let scatteredAgentFiles = 0;
+  let scatteredSkillFiles = 0;
+  const allFiles = walk(".", 4);
+  // Agent-like files anywhere: *-agent.md, agent-*.md, *agent*.md, subagent*, rule*.md
+  const agentLikePatterns = /[-_]agent\.md$|^agent[-_]|subagent|^rule[sr]?\.md$|[-_]rules?\.md$/i;
+  const agentLikeFiles = allFiles.filter((f) => agentLikePatterns.test(basename(f)));
+  // Exclude files already counted in agentDirs
+  const agentLikeOutside = agentLikeFiles.filter((f) => {
+    const rel = f.slice(repo.length + 1);
+    return !agentDirs.some((d) => rel.startsWith(d));
+  });
+  if (agentLikeOutside.length > 0) {
+    scatteredAgentFiles = agentLikeOutside.length;
+    evidence.push({ path: "agent/rule dosyaları (dağınık)", lines: null, note: `${scatteredAgentFiles} dosya: ${agentLikeOutside.slice(0,10).map(f => f.slice(repo.length+1)).join(", ")}${scatteredAgentFiles>10?"...":""}` });
+  }
+  // SKILL.md + AI-related files anywhere (outside known skill dirs)
+  const skillLikePatterns = /^SKILL\.md$|^skill[-_]|[-_]skill\.md$/i;
+  const skillLikeFiles = allFiles.filter((f) => skillLikePatterns.test(basename(f)));
+  const skillLikeOutside = skillLikeFiles.filter((f) => {
+    const rel = f.slice(repo.length + 1);
+    return !skillDirs.some((d) => rel.startsWith(d));
+  });
+  if (skillLikeOutside.length > 0) {
+    scatteredSkillFiles = skillLikeOutside.length;
+    evidence.push({ path: "skill dosyaları (dağınık)", lines: null, note: `${scatteredSkillFiles} dosya: ${skillLikeOutside.slice(0,10).map(f => f.slice(repo.length+1)).join(", ")}` });
   }
 
   // Slash command / workflow tanımları
@@ -301,6 +365,28 @@ function scoreAgentic() {
     if (exists(p) && /["']?hooks["']?\s*:/.test(readSafe(p))) { hasHooks = true; break; }
   }
 
+  // n8n workflow detection — automation/agentic sinyal
+  let hasN8n = false;
+  let n8nNote = "";
+  // Check README/docs for n8n references
+  const n8nInReadme = /\bn8n\b/i.test(readme);
+  // Check for n8n workflow JSON files
+  const n8nWorkflowFiles = walk(".", 3).filter((f) => /n8n.*\.json$/i.test(basename(f)) || /workflow.*\.json$/i.test(basename(f)));
+  // Check for docker-compose with n8n
+  const dockerCompose = readSafe("docker-compose.yml") + readSafe("docker-compose.yaml");
+  const n8nInDocker = /\bn8n\b/i.test(dockerCompose);
+  // Check for n8n references in any config/docs
+  const n8nInDocs = walk("docs", 2).some((f) => /\bn8n\b/i.test(readSafe(f.slice(repo.length + 1))));
+  hasN8n = n8nInReadme || n8nWorkflowFiles.length > 0 || n8nInDocker || n8nInDocs;
+  if (hasN8n) {
+    const sources = [];
+    if (n8nInReadme) sources.push("README");
+    if (n8nWorkflowFiles.length > 0) sources.push(`${n8nWorkflowFiles.length} workflow JSON`);
+    if (n8nInDocker) sources.push("docker-compose");
+    if (n8nInDocs) sources.push("docs/");
+    n8nNote = `n8n tespit: ${sources.join(", ")}`;
+  }
+
   evidence.push({
     path: "agent klasörü",
     lines: null,
@@ -318,13 +404,17 @@ function scoreAgentic() {
     note: mcpFiles.length > 0 ? `${mcpFiles.join(", ")} → MCP'ler: ${mcpServers.join(", ") || "tanımsız"}` : "yok",
   });
   if (hasHooks) evidence.push({ path: "hooks", lines: null, note: "tanımlı" });
+  if (hasN8n) evidence.push({ path: "n8n", lines: null, note: n8nNote });
 
   // Skorlama:
   if (agentDirs.length > 0) score += 4 + Math.min(agentCount, 4);
+  else if (scatteredAgentFiles > 0) score += 2 + Math.min(scatteredAgentFiles, 4); // dağınık agent/rule dosyaları
   if (skillDirs.length > 0) score += 4 + Math.min(skillCount, 4);
+  else if (scatteredSkillFiles > 0) score += 2 + Math.min(scatteredSkillFiles, 3); // dağınık skill dosyaları
   if (mcpFiles.length > 0) score += 4 + Math.min(mcpServers.length, 2);
   if (commandDirs.length > 0) score += 1;
   if (hasHooks) score += 1;
+  if (hasN8n) score += 3; // n8n workflow automation bonus
 
   score = Math.min(score, 20);
   return {
