@@ -68,7 +68,7 @@ export default async function TeamDetail({
         </div>
       ) : (
         <>
-          <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <div className={`rounded-lg border bg-white p-6 shadow-sm ${(latest.latePenalty ?? 0) > 0 ? "border-red-500 border-2" : "border-slate-200"}`}>
             <div className="flex items-baseline gap-4">
               <ScoreBadge score={latest.totalScore} max={latest.maxScore} size="lg" />
               <div className="text-2xl font-semibold">
@@ -82,6 +82,22 @@ export default async function TeamDetail({
             {latest.modelNote && (
               <p className="mt-2 text-xs text-slate-500">{latest.modelNote}</p>
             )}
+            {(() => {
+              const lp = latest.latePenaltyDetail as { applied?: boolean; lateCommit?: { hash: string; when: string }; cutoff?: string } | null;
+              if (!lp?.applied || !lp.lateCommit) return null;
+              const commitDate = new Date(lp.lateCommit.when);
+              return (
+                <div className="mt-3 flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <span className="text-lg">⏰</span>
+                  <div>
+                    <span className="font-semibold">Geç commit:</span>{" "}
+                    <code className="rounded bg-red-100 px-1 text-xs">{lp.lateCommit.hash}</code>{" "}
+                    — {commitDate.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" })}
+                    <span className="text-red-500 ml-1">(deadline: 17:30)</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {(() => {
