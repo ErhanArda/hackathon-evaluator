@@ -29,6 +29,9 @@ Her sub-agent çalışırken kendi durumunu `/api/eval-requests/:id/agent-state`
 
 Detaylı mimari: [`docs/architecture.md`](docs/architecture.md)
 
+> **Yeni hackathon açacaksan:** [`docs/yeni-hackathon.md`](docs/yeni-hackathon.md) —
+> arşivleme, veritabanı sıfırlama ve `EVAL_LATE_CUTOFF` adımları.
+
 ## Kullanılan AI Tool'lar
 
 - **Claude Code** (Opus 5) — geliştirme + sub-agent orchestrator
