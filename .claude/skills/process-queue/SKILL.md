@@ -21,11 +21,22 @@ Bir batch'te toplam **2N paralel LLM çağrısı** (N=batch). Aynı repo için s
 `EVALUATOR_API_BASE`'i (ve varsa `INGEST_TOKEN`'ı) akışın başında bir kez yükle:
 
 ```bash
-# .env.local varsa oradan, yoksa shell ortamından
+# .env.local varsa oradan, yoksa shell ortamından.
+# CLAUDE_PROJECT_DIR bazı oturumlarda BOŞ geliyor — fallback şart, yoksa
+# .env.local sessizce okunmaz ve EVAL_LATE_CUTOFF'suz koşarsın (geç teslim
+# kontrolü atlanır, kimse fark etmez).
+PROJ="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}"
 set -a
-[ -f "$CLAUDE_PROJECT_DIR/apps/web/.env.local" ] && . "$CLAUDE_PROJECT_DIR/apps/web/.env.local"
+[ -f "$PROJ/apps/web/.env.local" ] && . "$PROJ/apps/web/.env.local"
 set +a
 : "${EVALUATOR_API_BASE:=https://hackathon-evaluator-eta.vercel.app}"
+
+# Kurumsal TLS proxy'si altında Node kendi gömülü CA store'unu kullanır, macOS
+# keychain'ini değil → finalize-evaluation.mjs SELF_SIGNED_CERT_IN_CHAIN ile
+# patlar (curl aynı adrese sorunsuz gider, bu yüzden yanıltıcıdır).
+# Desteklemeyen eski Node'da bu satır sessizce atlanır.
+node --use-system-ca -e '' 2>/dev/null \
+  && export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--use-system-ca"
 ```
 
 `INGEST_TOKEN` **opsiyonel**. Sunucuda `EVALUATOR_REQUIRE_AUTH` kapalı olduğu
