@@ -194,11 +194,17 @@ function sectionBody(text, headingRe) {
  * yoksa gövdede (placeholder/başlık temizlenmiş) desen geçmeli.
  * `corroborate` verilirse, başlıksız yolda ek kanıt da şart koşulur.
  */
-function declaresSection(text, headingRe, contentRe, corroborate = true) {
+function declaresSection(text, headingRe, contentRe, corroborate = true, sectionRe = null) {
+  // `sectionRe`: yalnız BAŞLIĞI eşleşen bölümün gövdesinde kullanılan, daha
+  // geniş desen. "## Kullanılan AI Araçları" altındaki bir satırda geçen "v0",
+  // "GLM" veya "Command R" kesinlikle bir araç beyanıdır; aynı kelimeler
+  // README'nin rastgele bir yerinde sürüm dizesi ya da istatistik terimi
+  // olabilir. Böylece hassasiyeti kaybetmeden geri çağırma kazanıyoruz.
+  const inSection = sectionRe || contentRe;
   const body = sectionBody(text, headingRe);
   if (body !== null) {
     const filled = stripPlaceholders(body);
-    if (hasRealContent(filled) && contentRe.test(filled)) return true;
+    if (hasRealContent(filled) && inSection.test(filled)) return true;
     // Başlık var ama gövde boş/placeholder → beyan yok.
     if (!hasRealContent(filled)) return false;
   }
@@ -356,6 +362,10 @@ function scoreReadme() {
 // takım (Achillies) kusursuz doldurulmuş tabloya rağmen "AI tool listesi=✗"
 // alıp readme + ai-evidence'tan 6 puan kaybediyordu.
   const AI_TOOL_RE = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|windsurf|codeium|deepseek|qwen|glm-?\d|zcode|kimi|moonshot|minimax|doubao|ernie|llama|mistral|mixtral|grok|gemma|trae|cline|roo\s*code|kilo\s*code|replit|bolt\.new|lovable|ollama|lm\s*studio|perplexity|saka[\\s/_-]*(?:gpt|glm|claude|codex|gemini|sonnet|opus)|ai tools? used|ai-?assist)/i;
+// Beyan bölümü İÇİNDE geçerli olan ek adlar: tek başına bunlar bir README'nin
+// herhangi bir yerinde sürüm dizesi / CLI bayrağı / istatistik terimi olabilir,
+// ama "Kullanılan AI Araçları" başlığının altında geçtiklerinde beyandır.
+  const AI_TOOL_LOOSE = /\bv0\b|\bglm\b|\bsaka\b|command-?\s?r\b|\bphi-?\d|\byi-?\d|\bnova\b|\btitan\b|\bjamba\b|\bdbrx\b|\breka\b/i;
   const MCP_RE = /\bmcp\b|model context protocol/i;
   const MCP_CONFIG_FILES = [
     ".mcp.json", "mcp.json", "claude_desktop_config.json", ".cursor/mcp.json",
@@ -371,8 +381,9 @@ function scoreReadme() {
   // dönük belge sayıyor, takımlar AI/MCP beyanını çoğu zaman AI_JURI.md'ye
   // yazıyor. Hangi dosyadan geldiğini evidence'ta belirtiyoruz.
   const AI_TOOL_HEAD = /ai|yapay zek|tool|ara[çc]|model/i;
-  const aiToolInReadme = declaresSection(readme, AI_TOOL_HEAD, AI_TOOL_RE);
-  const aiToolInJuri = !!aiJuri && declaresSection(aiJuri, AI_TOOL_HEAD, AI_TOOL_RE);
+  const AI_TOOL_SECTION_RE = new RegExp(`${AI_TOOL_RE.source}|${AI_TOOL_LOOSE.source}`, "i");
+  const aiToolInReadme = declaresSection(readme, AI_TOOL_HEAD, AI_TOOL_RE, true, AI_TOOL_SECTION_RE);
+  const aiToolInJuri = !!aiJuri && declaresSection(aiJuri, AI_TOOL_HEAD, AI_TOOL_RE, true, AI_TOOL_SECTION_RE);
   dims.push({ name: "AI tool listesi", got: aiToolInReadme || aiToolInJuri });
 
   // MCP'de başlıksız yol ek kanıt ister: repoda gerçek bir MCP config'i ya da
@@ -448,12 +459,26 @@ function scoreAiEvidence() {
 
   const aiToolRe = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|continue\.dev|windsurf|codeium|devin|tabnine|jetbrains\s*ai|zed\s*ai|deepseek|qwen|glm-?\d|zcode|kimi|moonshot|minimax|doubao|ernie|llama|mistral|mixtral|grok|gemma|trae|cline|roo\s*code|kilo\s*code|replit|bolt\.new|lovable|ollama|lm\s*studio|perplexity|saka[\\s/_-]*(?:gpt|glm|claude|codex|gemini|sonnet|opus)|ai\s+tools?\s+used|ai-?assist)/i;
   // Placeholder farkındalığı: `*[örn. Claude Code]*` beyan sayılmaz.
-  const aiToolInReadme = aiToolRe.test(declaredText(readme));
+  // "Kullanılan AI Araçları" başlığının ALTINDA geçtiğinde, tek başına
+  // belirsiz olan adlar da (v0, GLM, SAKA, Command R, Phi-4, Yi-34B…) beyan
+  // sayılır; README'nin geri kalanında yalnız kesin adlar aranır.
+  const AI_HEAD_RE = /ai|yapay zek|tool|ara[çc]|model/i;
+  const AI_LOOSE_RE = /\bv0\b|\bglm\b|\bsaka\b|command-?\s?r\b|\bphi-?\d|\byi-?\d|\bnova\b|\btitan\b|\bjamba\b|\bdbrx\b|\breka\b/i;
+  const declaresTool = (txt) => {
+    if (!txt) return false;
+    const body = sectionBody(txt, AI_HEAD_RE);
+    if (body !== null) {
+      const filled = stripPlaceholders(body);
+      if (hasRealContent(filled) && (aiToolRe.test(filled) || AI_LOOSE_RE.test(filled))) return true;
+    }
+    return aiToolRe.test(declaredText(txt));
+  };
+  const aiToolInReadme = declaresTool(readme);
   const docDir = ["docs", "doc", "documentation"].find((d) => exists(d));
   const aiToolInDocs = docDir
-    ? walk(docDir, 3).some((f) => /\.mdx?$/i.test(f) && aiToolRe.test(declaredText(readSafe(rel(f)))))
+    ? walk(docDir, 3).some((f) => /\.mdx?$/i.test(f) && declaresTool(readSafe(rel(f))))
     : false;
-  const aiToolInJuri = !!aiJuri && aiToolRe.test(declaredText(aiJuri));
+  const aiToolInJuri = !!aiJuri && declaresTool(aiJuri);
   const aiToolMatch = aiToolInReadme || aiToolInDocs || aiToolInJuri;
   const aiToolWhere = aiToolInReadme ? "" : aiToolInDocs ? " (docs/ içinde)" : aiToolInJuri ? " (AI_JURI.md içinde)" : "";
   evidence.push({ path: "README.md + docs/ + AI_JURI.md", lines: null, note: aiToolMatch ? `AI tool listesi var${aiToolWhere}` : "AI tool listesi yok" });
