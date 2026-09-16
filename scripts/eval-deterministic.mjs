@@ -106,6 +106,13 @@ const TRACKED = (() => gitRaw("ls-files", "-z").split("\0").filter(Boolean))();
 
 const readme = readSafe("README.md") || readSafe("readme.md") || readSafe("Readme.md");
 
+// Hackathon teslim şablonunun jüriye dönük AI beyan dosyası. Takımların
+// hepsi bunu dolduruyor ama skorlayıcı hiç okumuyordu: AI araçlarını ve MCP
+// kullanımını README yerine burada beyan eden takım "yok" alıyordu.
+const aiJuri =
+  readSafe("AI_JURI.md") || readSafe("ai_juri.md") || readSafe("AI-JURI.md") ||
+  readSafe("AI_JURY.md") || readSafe("docs/AI_JURI.md");
+
 // ---------- şablon/placeholder farkındalığı ----------
 // Şablon repolarında başlık dolu, altı boş: `## MCP Sunucu Listesi` +
 // `- *[kullanılan MCP sunucuları buraya]*`. Eski sürüm başlığı ve örnek
@@ -200,6 +207,25 @@ function declaresSection(text, headingRe, contentRe, corroborate = true) {
 }
 
 const SKIP_PATH = /(^|\/)(node_modules|\.next|dist|build|out|vendor|coverage|\.venv|venv|__pycache__|target|\.turbo|\.svelte-kit|\.nuxt|Pods)(\/|$)/i;
+
+// ---------- MCP: istemci config'i VE sunucu implementasyonu ----------
+// Bir repo MCP'yi iki yönde kullanabilir: istemci olarak (.mcp.json ile
+// dışarıdaki sunucuyu bağlar) ya da SUNUCU olarak (kendi MCP server'ını
+// yazar). Eski sürüm yalnız istemci config'ine bakıyordu; motoru
+// `mcp_server.py` ile MCP sunucusu olarak dışa açan takım "MCP=yok" alıyor
+// ve agentic'te 4-6 puan kaybediyordu.
+// Yalnız GERÇEK SDK import'u sayılır — README'de "MCP" yazması veya
+// requirements.txt'te yorum satırı yeterli değil.
+const MCP_SDK_IMPORT_RE =
+  /^[ \t]*(?:from\s+mcp[.\s]|import\s+mcp\b|from\s+["'`]@modelcontextprotocol\/|(?:const|let|var)\s+.*=\s*require\(\s*["'`]@modelcontextprotocol\/)/m;
+let _mcpServerFiles = null;
+function findMcpServerFiles() {
+  if (_mcpServerFiles) return _mcpServerFiles;
+  const files = (TRACKED.length ? TRACKED : walk(".", 4).map(rel))
+    .filter((f) => /\.(py|ts|tsx|js|mjs|cjs)$/i.test(f) && !SKIP_PATH.test(f));
+  _mcpServerFiles = files.filter((f) => MCP_SDK_IMPORT_RE.test(readSafe(f)));
+  return _mcpServerFiles;
+}
 
 // ---------- manifest toplama (monorepo dahil) ----------
 // Eskiden yalnız KÖK package.json okunuyordu; bu yüzden monorepo'lar (bu
@@ -333,11 +359,28 @@ function scoreReadme() {
     ".windsurf/mcp.json", ".vscode/mcp.json",
   ];
   const hasMcpConfig = MCP_CONFIG_FILES.some((f) => exists(f));
+  const mcpServerFiles = findMcpServerFiles();
+  // Kendi MCP sunucusunu yazmak da MCP kullanımının kanıtıdır.
+  const hasMcpEvidence = hasMcpConfig || mcpServerFiles.length > 0;
 
-  dims.push({ name: "AI tool listesi", got: declaresSection(readme, /ai|yapay zek|tool|ara[çc]|model/i, AI_TOOL_RE) });
-  // MCP'de başlıksız yol ek kanıt ister: repoda gerçek bir MCP config'i olmalı.
-  // Aksi halde "MCP" kelimesinin bir ders/konu listesinde geçmesi ✓ veriyordu.
-  dims.push({ name: "MCP listesi", got: declaresSection(readme, MCP_RE, MCP_RE, hasMcpConfig) });
+  // Beyan README'de ya da AI_JURI.md'de olabilir — şablon ikisini de jüriye
+  // dönük belge sayıyor, takımlar AI/MCP beyanını çoğu zaman AI_JURI.md'ye
+  // yazıyor. Hangi dosyadan geldiğini evidence'ta belirtiyoruz.
+  const AI_TOOL_HEAD = /ai|yapay zek|tool|ara[çc]|model/i;
+  const aiToolInReadme = declaresSection(readme, AI_TOOL_HEAD, AI_TOOL_RE);
+  const aiToolInJuri = !!aiJuri && declaresSection(aiJuri, AI_TOOL_HEAD, AI_TOOL_RE);
+  dims.push({ name: "AI tool listesi", got: aiToolInReadme || aiToolInJuri });
+
+  // MCP'de başlıksız yol ek kanıt ister: repoda gerçek bir MCP config'i ya da
+  // MCP sunucu implementasyonu olmalı. Aksi halde "MCP" kelimesinin bir
+  // ders/konu listesinde geçmesi ✓ veriyordu.
+  const mcpInReadme = declaresSection(readme, MCP_RE, MCP_RE, hasMcpEvidence);
+  const mcpInJuri = !!aiJuri && declaresSection(aiJuri, MCP_RE, MCP_RE, hasMcpEvidence);
+  dims.push({ name: "MCP listesi", got: mcpInReadme || mcpInJuri });
+
+  if (aiToolInJuri && !aiToolInReadme) evidence.push({ path: "AI_JURI.md", lines: null, note: "AI tool beyanı README'de değil AI_JURI.md'de" });
+  if (mcpInJuri && !mcpInReadme) evidence.push({ path: "AI_JURI.md", lines: null, note: "MCP beyanı README'de değil AI_JURI.md'de" });
+  if (mcpServerFiles.length > 0) evidence.push({ path: "MCP sunucusu", lines: null, note: `kendi MCP server implementasyonu: ${mcpServerFiles.slice(0, 3).join(", ")}` });
 
   const deployUrls = findDeployUrls();
   dims.push({ name: "Deploy URL", got: deployUrls.length > 0 });
@@ -406,8 +449,10 @@ function scoreAiEvidence() {
   const aiToolInDocs = docDir
     ? walk(docDir, 3).some((f) => /\.mdx?$/i.test(f) && aiToolRe.test(declaredText(readSafe(rel(f)))))
     : false;
-  const aiToolMatch = aiToolInReadme || aiToolInDocs;
-  evidence.push({ path: "README.md + docs/", lines: null, note: aiToolMatch ? `AI tool listesi var${aiToolInDocs && !aiToolInReadme ? " (docs/ içinde)" : ""}` : "AI tool listesi yok" });
+  const aiToolInJuri = !!aiJuri && aiToolRe.test(declaredText(aiJuri));
+  const aiToolMatch = aiToolInReadme || aiToolInDocs || aiToolInJuri;
+  const aiToolWhere = aiToolInReadme ? "" : aiToolInDocs ? " (docs/ içinde)" : aiToolInJuri ? " (AI_JURI.md içinde)" : "";
+  evidence.push({ path: "README.md + docs/ + AI_JURI.md", lines: null, note: aiToolMatch ? `AI tool listesi var${aiToolWhere}` : "AI tool listesi yok" });
 
   const contextFileNames = ["CLAUDE.md", "CURSOR.md", "AGENTS.md", "GEMINI.md", "CODEX.md", "COPILOT.md", ".cursorrules"];
   const contextFiles = [];
@@ -524,6 +569,7 @@ function scoreAgentic() {
     ".vscode/mcp.json",
   ];
   const mcpFiles = mcpFileCandidates.filter((p) => exists(p));
+  const mcpServerImpl = findMcpServerFiles();
   let mcpServers = [];
   for (const p of mcpFiles) {
     try {
@@ -532,10 +578,13 @@ function scoreAgentic() {
     } catch { /* bozuk JSON */ }
   }
   mcpServers = [...new Set(mcpServers)];
+  const mcpNotes = [];
+  if (mcpFiles.length > 0) mcpNotes.push(`istemci config: ${mcpFiles.join(", ")} → ${mcpServers.join(", ") || "server tanımsız"}`);
+  if (mcpServerImpl.length > 0) mcpNotes.push(`kendi MCP sunucusu: ${mcpServerImpl.slice(0, 3).join(", ")}`);
   evidence.push({
     path: "MCP config",
     lines: null,
-    note: mcpFiles.length > 0 ? `${mcpFiles.join(", ")} → ${mcpServers.join(", ") || "server tanımsız"}` : "yok",
+    note: mcpNotes.length > 0 ? mcpNotes.join(" · ") : "yok",
   });
 
   let hasHooks = false;
@@ -564,7 +613,9 @@ function scoreAgentic() {
   else if (agentFiles.length > 0) score += 2;
   if (realSkills.length > 0) score += 4 + Math.min(realSkills.length, 4);
   else if (skillFiles.length > 0) score += 2;
-  if (mcpFiles.length > 0) score += 4 + Math.min(mcpServers.length, 2);
+  // İstemci config'i de kendi sunucusunu yazmak da MCP kullanımıdır.
+  const mcpUnitCount = Math.max(mcpServers.length, mcpServerImpl.length);
+  if (mcpFiles.length > 0 || mcpServerImpl.length > 0) score += 4 + Math.min(mcpUnitCount, 2);
   if (commandDirs.length > 0) score += 1;
   if (hasHooks) score += 1;
   if (hasN8n) score += 3;
@@ -574,7 +625,7 @@ function scoreAgentic() {
     criterion: "agentic",
     score,
     max: 20,
-    rationale: `${realAgents.length} gerçek agent tanımı, ${realSkills.length} gerçek skill, MCP=${mcpFiles.length > 0 ? mcpServers.join(",") || "var" : "yok"}, slash command=${commandDirs.length > 0}, hooks=${hasHooks}, n8n=${hasN8n}.`,
+    rationale: `${realAgents.length} gerçek agent tanımı, ${realSkills.length} gerçek skill, MCP=${mcpFiles.length > 0 || mcpServerImpl.length > 0 ? mcpServers.join(",") || (mcpServerImpl.length > 0 ? "kendi sunucusu" : "var") : "yok"}, slash command=${commandDirs.length > 0}, hooks=${hasHooks}, n8n=${hasN8n}.`,
     evidence,
   };
 }
