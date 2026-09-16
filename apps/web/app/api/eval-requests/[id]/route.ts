@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { requireToken } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,9 @@ type PatchBody = {
 };
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const denied = requireToken(req);
+  if (denied) return denied;
+
   const { id } = await ctx.params;
   const body = (await req.json().catch(() => null)) as PatchBody | null;
   if (!body) return NextResponse.json({ error: "body required" }, { status: 400 });

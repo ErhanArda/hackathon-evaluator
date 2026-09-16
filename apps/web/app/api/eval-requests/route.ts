@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { requireToken } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = requireToken(req);
+  if (denied) return denied;
+
   const body = await req.json().catch(() => null);
   if (!body || typeof body.teamId !== "string") {
     return NextResponse.json({ error: "teamId required" }, { status: 400 });

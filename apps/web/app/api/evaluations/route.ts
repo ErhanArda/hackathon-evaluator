@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { desc } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { requireToken } from "@/lib/auth";
 import { CRITERIA, TOTAL_MAX } from "@/lib/criteria";
 
 export const runtime = "nodejs";
@@ -26,7 +27,10 @@ type LatePenalty = {
   applied?: boolean;
   points?: number;
   cutoff?: string;
-  lateCommit?: { hash?: string; when?: string } | null;
+  lateCommit?: { hash?: string; when?: string; message?: string } | null;
+  // eval-deterministic.mjs tüm geç commit'leri döner — UI listeyi gösteriyor.
+  lateCommits?: Array<{ hash?: string; when?: string; message?: string }>;
+  lateCommitCount?: number;
 };
 
 type IncomingBody = {
@@ -48,6 +52,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = requireToken(req);
+  if (denied) return denied;
+
   const body = (await req.json().catch(() => null)) as IncomingBody | null;
   if (!body || typeof body.teamId !== "string" || !Array.isArray(body.scores)) {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });

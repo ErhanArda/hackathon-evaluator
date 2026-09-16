@@ -6,6 +6,10 @@ export type LeaderRow = {
   team: typeof schema.teams.$inferSelect;
   evaluation: typeof schema.evaluations.$inferSelect | null;
   scoresByCriterion: Record<string, number>;
+  // Geçmiş değerlendirmeler eski ağırlıklarla kaydedildi (ör. ai-evidence 20).
+  // UI bu satır bazlı max'ı kullanmalı, CRITERIA'daki bugünkü max'ı değil —
+  // aksi halde eski bir 16 puan "16/12" diye görünür.
+  maxByCriterion: Record<string, number>;
   totalScore: number | null;
   maxScore: number;
 };
@@ -33,10 +37,14 @@ export async function getLeaderboard(): Promise<LeaderRow[]> {
       .where(inArray(schema.criterionScores.evaluationId, evalIds));
   }
   const scoresByEval = new Map<string, Record<string, number>>();
+  const maxByEval = new Map<string, Record<string, number>>();
   for (const s of scores) {
     const m = scoresByEval.get(s.evaluationId) ?? {};
     m[s.criterion] = s.score;
     scoresByEval.set(s.evaluationId, m);
+    const mx = maxByEval.get(s.evaluationId) ?? {};
+    mx[s.criterion] = s.max;
+    maxByEval.set(s.evaluationId, mx);
   }
 
   const rows: LeaderRow[] = teams.map((t) => {
@@ -45,6 +53,7 @@ export async function getLeaderboard(): Promise<LeaderRow[]> {
       team: t,
       evaluation: ev,
       scoresByCriterion: ev ? scoresByEval.get(ev.id) ?? {} : {},
+      maxByCriterion: ev ? maxByEval.get(ev.id) ?? {} : {},
       totalScore: ev ? ev.totalScore : null,
       maxScore: ev?.maxScore ?? TOTAL_MAX,
     };

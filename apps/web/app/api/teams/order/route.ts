@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { requireToken } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,9 @@ export const dynamic = "force-dynamic";
 // Body: { order: ["t01", "t05", ...] }  // new display order
 // Sets display_order = index (0-based) for each id; ids not in array stay unchanged.
 export async function POST(req: NextRequest) {
+  const denied = requireToken(req);
+  if (denied) return denied;
+
   const body = await req.json().catch(() => null);
   if (!body || !Array.isArray(body.order)) {
     return NextResponse.json({ error: "order array required" }, { status: 400 });

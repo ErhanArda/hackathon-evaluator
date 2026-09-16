@@ -38,18 +38,29 @@ done
 `GET /api/teams` → name + repoUrl.
 
 ### 5. Repoları klonla (paralel)
+
+Tüm workdir'ler **tek kök** altında, request id ile isimlendirilmiş. İndeksli değişken yok.
+
 ```bash
-for r in claimed; do
-  WORKDIR_$i=$(mktemp -d -t eval-XXXXXX)
-  git clone --depth 50 "$REPO_URL" "$WORKDIR_$i/repo" &
+set -u
+ROOT=$(mktemp -d -t evalbatch-XXXXXX)
+export GIT_TERMINAL_PROMPT=0            # private repo'da kimlik sorma, 128 ile çık
+
+for REQ_ID in $CLAIMED_IDS; do
+  mkdir -p "$ROOT/$REQ_ID"
+  git clone --depth 50 --single-branch --no-tags "$REPO_URL_FOR_REQ" "$ROOT/$REQ_ID/repo" &
 done
 wait
 ```
 
+> **ASLA** `WORKDIR_$i=$(mktemp -d)` yazma — geçerli bir kabuk ataması değil (exit 127) ve Bash aracında shell state çağrılar arası korunmadığı için indeksli değişken zaten taşınmaz.
+
 ### 6a. Deterministik script (her takım için paralel Bash background)
 ```bash
-node /Users/tcerarda/Desktop/hackathon/scripts/eval-deterministic.mjs "$WORKDIR_$i/repo" > /tmp/det-$REQ_ID.json &
+node "$CLAUDE_PROJECT_DIR/scripts/eval-deterministic.mjs" "$ROOT/$REQ_ID/repo" > "$ROOT/$REQ_ID/det.json" &
 ```
+
+> Yol **repoya göre**. Mutlak yol yazma: makinede `~/Desktop/hackathon` adında bu projenin eski bir klonu var ve mutlak yol sessizce onu çalıştırır.
 Bekle, parse et. 5 kriter (docs, readme, ai-evidence, agentic, tests) anında elde. analist/ai-evidence/tester agent-state'lerini "done" + ilgili skor ile PATCH et (UI canlı yeşillenir).
 
 `securityScan.detected` ise modelNote'a uyarı ekle.
@@ -92,8 +103,14 @@ curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
 
 ### 9. Workdir cleanup
 ```bash
-rm -rf "$WORKDIR_"*
+# Tek kök, glob yok. Guard: beklenmeyen yolda silme.
+case "$ROOT" in
+  /var/folders/*|/tmp/*) [ -n "$ROOT" ] && rm -rf "$ROOT" ;;
+  *) echo "temizlik atlandi — beklenmeyen ROOT: '$ROOT'" >&2 ;;
+esac
 ```
+
+> **Glob kullanma.** `rm -rf "$WORKDIR_"*` değişken tanımsızken `rm -rf *`'a genişler ve komutun çalıştığı dizini — proje kökünü — siler.
 
 ## /loop ile
 

@@ -83,7 +83,7 @@ export default async function TeamDetail({
               <p className="mt-2 text-xs text-slate-500">{latest.modelNote}</p>
             )}
             {(() => {
-              const lp = latest.latePenaltyDetail as { applied?: boolean; lateCommit?: { hash: string; when: string }; lateCommits?: { hash: string; when: string; message?: string }[]; lateCommitCount?: number; cutoff?: string } | null;
+              const lp = latest.latePenaltyDetail as { applied?: boolean; lateCommit?: { hash: string; when: string; message?: string }; lateCommits?: { hash: string; when: string; message?: string }[]; lateCommitCount?: number; cutoff?: string } | null;
               if (!lp?.applied) return null;
               const commits = lp.lateCommits ?? (lp.lateCommit ? [lp.lateCommit] : []);
               if (commits.length === 0) return null;
@@ -158,7 +158,7 @@ export default async function TeamDetail({
                 >
                   <summary className="flex cursor-pointer items-center justify-between gap-4">
                     <div className="font-medium">{c.label}</div>
-                    <ScoreBadge score={s?.score ?? null} max={c.max} />
+                    <ScoreBadge score={s?.score ?? null} max={s?.max ?? c.max} />
                   </summary>
                   {s ? (
                     <div className="mt-3 space-y-3 text-sm">

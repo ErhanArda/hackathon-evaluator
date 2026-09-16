@@ -1,22 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { LeaderRow } from "@/lib/queries";
 import { CRITERIA } from "@/lib/criteria";
 import { ScoreBadge } from "./ScoreBadge";
 import { normalize100, rankColor } from "@/lib/scoring";
+import { authHeaders, authMessage } from "@/lib/client-token";
 
 export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
   const router = useRouter();
-  const [rows, setRows] = useState(initial);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
-  const [manualMode, setManualMode] = useState(
-    initial.some((r) => r.team.displayOrder != null)
-  );
+  const [orderErr, setOrderErr] = useState<string | null>(null);
+
+  // `rows`, prop'tan TÜRETİLİR — state'e kopyalanmaz. Aksi halde AutoRefresh'in
+  // 5 sn'de bir çağırdığı router.refresh() yeni veriyi getirse de useState'in
+  // ilk değeri onu yutar ve tablo mount anındaki skorlarda donar.
+  // Sürükleme sırası yalnızca sunucu yetişene kadar "optimistic override".
+  const [override, setOverride] = useState<string[] | null>(null);
+
+  const rows = useMemo(() => {
+    if (!override || override.length === 0) return initial;
+    const byId = new Map(initial.map((r) => [r.team.id, r]));
+    const ordered = override.map((id) => byId.get(id)).filter((r): r is LeaderRow => !!r);
+    const seen = new Set(override);
+    return [...ordered, ...initial.filter((r) => !seen.has(r.team.id))];
+  }, [initial, override]);
+
+  // override'ı ayrıca temizlemek gerekmiyor: sunucu aynı sıraya geçtiğinde
+  // yukarıdaki yeniden sıralama zaten aynı diziyi üretir, yani no-op olur.
+  // Sonradan eklenen takımlar sona, silinenler ise listeden düşer.
+  const manualMode = override
+    ? override.length > 0
+    : initial.some((r) => r.team.displayOrder != null);
 
   if (rows.length === 0) {
     return (
@@ -28,13 +47,22 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
 
   async function persist(orderIds: string[]) {
     setSaving(true);
+    setOrderErr(null);
     try {
-      await fetch("/api/teams/order", {
+      const res = await fetch("/api/teams/order", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ order: orderIds }),
       });
+      if (!res.ok) {
+        setOrderErr(authMessage(res.status) ?? `Sıra kaydedilemedi: HTTP ${res.status}`);
+        setOverride(null); // optimistic sırayı geri al, sunucudaki gerçeği göster
+        return;
+      }
       router.refresh();
+    } catch (err) {
+      setOrderErr(`Sıra kaydedilemedi: ${String(err)}`);
+      setOverride(null);
     } finally {
       setSaving(false);
     }
@@ -61,16 +89,16 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
     const next = [...rows];
     const [moved] = next.splice(dragIndex, 1);
     next.splice(i, 0, moved);
-    setRows(next);
+    const ids = next.map((r) => r.team.id);
     setDragIndex(null);
     setOverIndex(null);
-    setManualMode(true);
-    persist(next.map((r) => r.team.id));
+    setOverride(ids); // optimistic; sunucu aynı sıraya geçince no-op olur
+    persist(ids);
   }
 
   function resetOrder() {
-    setManualMode(false);
-    persist([]); // empty array = clear display_order on all teams
+    setOverride([]); // boş dizi = tüm takımlarda display_order temizlenir (auto mod)
+    persist([]);
   }
 
   return (
@@ -85,6 +113,7 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
         </span>
         <div className="flex items-center gap-3">
           {saving && <span className="text-slate-400">kaydediliyor...</span>}
+          {orderErr && <span className="text-rose-600">{orderErr}</span>}
           {manualMode && (
             <button
               onClick={resetOrder}
@@ -105,8 +134,8 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
               <th className="px-3 py-3 w-16" title="Tıkla → Excel için kopyala">/10</th>
               <th className="px-3 py-3 w-20">Toplam</th>
               {CRITERIA.map((c) => (
-                <th key={c.key} className="px-2 py-3 w-16 text-center" title={c.label}>
-                  {c.key === "ai-evidence" ? "AI" : c.key === "agentic" ? "Agnt" : c.key === "clean-code" ? "Kod" : c.key === "architecture" ? "Mim" : c.key === "docs" ? "Docs" : c.key === "readme" ? "Rdm" : "Test"}
+                <th key={c.key} className="px-2 py-3 w-16 text-center" title={`${c.label} (max ${c.max})`}>
+                  {c.short}
                 </th>
               ))}
               <th className="px-2 py-3 w-14"></th>
@@ -182,7 +211,7 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
                     <td key={c.key} className="px-2 py-3 text-center">
                       <ScoreBadge
                         score={row.scoresByCriterion[c.key] ?? null}
-                        max={c.max}
+                        max={row.maxByCriterion[c.key] ?? c.max}
                         size="sm"
                       />
                     </td>

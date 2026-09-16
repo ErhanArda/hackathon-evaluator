@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Deterministik kriter skorlayıcı.
 // Kullanım: node eval-deterministic.mjs <repo-path>
-// Çıktı: JSON [{criterion, score, max, rationale, evidence:[...]}]
+// Çıktı: JSON { scores:[{criterion,score,max,rationale,evidence}], securityScan, latePenalty }
 //
 // Skorladığı kriterler (5/7):
 //   - docs        (max 14)
@@ -10,11 +10,13 @@
 //   - agentic     (max 20)
 //   - tests       (max 4)
 //
-// LLM'e bırakılanlar: clean-code, architecture.
+// LLM'e bırakılanlar: clean-code (14), architecture (14).
+//
+// Repo kodu ASLA çalıştırılmaz — yalnız dosya okuma + git log.
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, basename } from "node:path";
-import { execSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join, basename, relative as pathRelative } from "node:path";
+import { execFileSync } from "node:child_process";
 
 const repo = process.argv[2];
 if (!repo || !existsSync(repo)) {
@@ -23,82 +25,198 @@ if (!repo || !existsSync(repo)) {
 }
 
 const exists = (p) => existsSync(join(repo, p));
-const readSafe = (p) => { try { return readFileSync(join(repo, p), "utf8"); } catch { return ""; } };
-const walk = (rel, depth = 3) => {
+
+// readSafe cache'li: tek çalıştırmada aynı dosya 4 kez okunuyordu (docs byte
+// sayımı, AI tool regex'i, n8n taraması, injection scanner). Repo salt-okunur.
+const _readCache = new Map();
+const readSafe = (p) => {
+  if (_readCache.has(p)) return _readCache.get(p);
+  let v = "";
+  try { v = readFileSync(join(repo, p), "utf8"); } catch { /* yok veya binary */ }
+  _readCache.set(p, v);
+  return v;
+};
+
+const SKIP_DIRS = new Set([
+  "node_modules", ".next", ".git", "dist", "build", "out", "target",
+  ".venv", "venv", "__pycache__", "vendor", "coverage", ".turbo", ".cache",
+  ".nuxt", ".svelte-kit", "Pods", ".gradle",
+]);
+
+// walk cache'li: aynı (rel,depth) çifti tek çalıştırmada 5 kez tam ağaç
+// geziyordu. Dönen dizi yalnızca okunur (filter/some/slice).
+const _walkCache = new Map();
+const walk = (relPath, depth = 3) => {
+  const key = `${relPath}|${depth}`;
+  if (_walkCache.has(key)) return _walkCache.get(key);
   const out = [];
-  const dir = join(repo, rel);
-  if (!existsSync(dir)) return out;
+  const dir = join(repo, relPath);
+  if (!existsSync(dir)) { _walkCache.set(key, out); return out; }
   const rec = (d, lvl) => {
     if (lvl < 0) return;
     let entries;
-    try { entries = readdirSync(d); } catch { return; }
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
-      if (e === "node_modules" || e === ".next" || e === ".git") continue;
-      const full = join(d, e);
-      let st;
-      try { st = statSync(full); } catch { continue; }
-      if (st.isDirectory()) rec(full, lvl - 1);
-      else out.push(full);
+      if (e.isDirectory()) {
+        if (SKIP_DIRS.has(e.name)) continue;
+        rec(join(d, e.name), lvl - 1);
+      } else if (e.isFile()) {
+        out.push(join(d, e.name));
+      }
     }
   };
   rec(dir, depth);
+  _walkCache.set(key, out);
   return out;
 };
 
-const sh = (cmd) => { try { return execSync(cmd, { cwd: repo, stdio: ["ignore", "pipe", "ignore"] }).toString(); } catch { return ""; } };
+// abs -> repo-göreli yol. `abs.slice(repo.length + 1)` KULLANILMAZ: repo "."
+// olarak verildiğinde join(".", "docs") "docs" döner ve slice(2) yolun ilk iki
+// karakterini keser ("docs/plan.md" -> "cs/plan.md"), sonra readSafe boş döner.
+const rel = (abs) => pathRelative(repo, abs);
 
-const readme = readSafe("README.md");
-const readmeLower = readme.toLowerCase();
+// ---------- git: TEK okuma ----------
+// Eskiden 3 ayrı `git log` + 2 shell pipe (grep/wc) vardı; ölçümde script
+// süresinin ~%95'i buydu (2,1 sn). Tek execFileSync + JS'te parse.
+const gitRaw = (...args) => {
+  try {
+    return execFileSync("git", args, {
+      cwd: repo, stdio: ["ignore", "pipe", "ignore"], maxBuffer: 128 * 1024 * 1024,
+    }).toString();
+  } catch { return ""; }
+};
+
+const REC_SEP = String.fromCharCode(30);
+const FLD_SEP = String.fromCharCode(31);
+
+const COMMITS = (() => {
+  const raw = gitRaw("log", `--format=%x1e%H%x1f%cI%x1f%an%x1f%s%x1f%B`);
+  return raw
+    .split(REC_SEP)
+    .filter((r) => r.trim())
+    .map((r) => {
+      const p = r.split(FLD_SEP);
+      return { hash: p[0] || "", when: p[1] || "", author: p[2] || "", subject: p[3] || "", body: p[4] || "" };
+    })
+    .filter((c) => c.hash);
+})();
+
+// Git'in izlediği dosyalar — build çıktısı / untracked dosya sızmasın.
+const TRACKED = (() => gitRaw("ls-files", "-z").split("\0").filter(Boolean))();
+
+const readme = readSafe("README.md") || readSafe("readme.md") || readSafe("Readme.md");
+
+const SKIP_PATH = /(^|\/)(node_modules|\.next|dist|build|out|vendor|coverage|\.venv|venv|__pycache__|target|\.turbo|\.svelte-kit|\.nuxt|Pods)(\/|$)/i;
+
+// ---------- manifest toplama (monorepo dahil) ----------
+// Eskiden yalnız KÖK package.json okunuyordu; bu yüzden monorepo'lar (bu
+// projenin kendisi dahil) ve Node dışı stack'ler tests kriterinden yapısal
+// olarak 0/4 alıyordu.
+const MANIFEST_NAMES = [
+  "package.json", "pyproject.toml", "requirements.txt", "Pipfile", "setup.cfg",
+  "go.mod", "pom.xml", "build.gradle", "build.gradle.kts", "Cargo.toml",
+  "composer.json", "Gemfile", "pubspec.yaml", "Package.swift", "mix.exs",
+];
+let _manifests = null;
+function collectManifests() {
+  if (_manifests) return _manifests;
+  const files = TRACKED.length ? TRACKED : walk(".", 5).map(rel);
+  _manifests = files
+    .filter((f) => MANIFEST_NAMES.includes(basename(f)) && !SKIP_PATH.test(f))
+    .slice(0, 40)
+    .map((f) => ({ path: f, content: readSafe(f) }));
+  return _manifests;
+}
+const allDepsText = () => collectManifests().map((m) => m.content).join("\n");
+
+// README'de beyan edilen deploy URL'leri. Eski sürüm sabit bir host beyaz
+// listesi kullanıyordu (vercel.app/netlify/...) ve kurumsal/Azure/AWS/custom
+// domain'leri reddediyordu — iç hackathon'da sistematik ceza.
+function findDeployUrls() {
+  const urls = new Set();
+  for (const m of readme.matchAll(/https?:\/\/[^\s)<>"'\]]+/gi)) {
+    const u = m[0].replace(/[.,;:]+$/, "");
+    if (/github\.com|gitlab\.com|bitbucket\.org|npmjs\.com|nodejs\.org|reactjs\.org|nextjs\.org|shields\.io|localhost|127\.0\.0\.1|example\.(com|org)|fonts\.googleapis/i.test(u)) continue;
+    if (/\.(png|jpe?g|gif|svg|webp|mp4|zip)$/i.test(u)) continue;
+    urls.add(u);
+  }
+  return [...urls].slice(0, 5);
+}
 
 // ---------- docs (max 14) ----------
 function scoreDocs() {
   const evidence = [];
-  let score = 0;
-  const hasDocs = exists("docs");
-  if (!hasDocs) {
-    evidence.push({ path: "docs/", lines: null, note: "yok" });
+
+  // docs/ dışındaki yaygın adlar da kabul edilir.
+  const docDir = ["docs", "doc", "documentation", "Documentation", ".docs", "wiki"].find((d) => exists(d));
+
+  // ALT KLASÖRLER dahil — eski sürüm readdirSync ile tek seviye tarıyordu,
+  // bu yüzden docs/planning/plan.md gibi bir yerleşim 5/14 alıyordu.
+  const docFiles = docDir ? walk(docDir, 4).filter((f) => /\.mdx?$/i.test(f)).map(rel) : [];
+
+  if (!docDir || docFiles.length === 0) {
     const claudeMd = readSafe("CLAUDE.md");
     const agentsMd = readSafe("AGENTS.md");
+    let score = 0;
+    evidence.push({ path: "docs/", lines: null, note: docDir ? `${docDir}/ var ama markdown yok` : "yok (docs/doc/documentation hiçbiri)" });
     if (claudeMd.length > 200 || agentsMd.length > 200) {
       score = 3;
       evidence.push({ path: "CLAUDE.md/AGENTS.md", lines: null, note: `${claudeMd.length + agentsMd.length} byte gömülü doküman` });
-    } else {
-      score = readme.length > 2000 ? 2 : 0;
-      if (readme.length > 2000) evidence.push({ path: "README.md", lines: null, note: "tüm doküman README'de gömülü" });
+    } else if (readme.length > 2000) {
+      score = 2;
+      evidence.push({ path: "README.md", lines: null, note: "tüm doküman README'de gömülü" });
     }
     return {
-      criterion: "docs",
-      score,
-      max: 14,
-      rationale: `docs/ klasörü yok. ${score === 0 ? "Ayrı doküman yok." : score <= 2 ? "Tüm doküman README'de gömülü." : "CLAUDE.md/AGENTS.md gömülü ama ayrı plan/phases/mimari yok."}`,
+      criterion: "docs", score, max: 14,
+      rationale: `Ayrı doküman klasörü yok. ${score === 0 ? "Doküman bulunamadı." : score === 2 ? "Tüm doküman README'de gömülü." : "CLAUDE.md/AGENTS.md var ama ayrı plan/aşama/mimari dokümanı yok."}`,
       evidence,
     };
   }
-  const docFiles = readdirSync(join(repo, "docs")).filter((f) => f.endsWith(".md"));
-  evidence.push({ path: "docs/", lines: null, note: `${docFiles.length} markdown dosya: ${docFiles.join(", ")}` });
-  const hasPlan = docFiles.some((f) => /plan/i.test(f));
-  const hasPhases = docFiles.some((f) => /phase|faz|stage/i.test(f));
-  const hasArch = docFiles.some((f) => /architecture|mimari|design/i.test(f));
-  let count = 0;
-  if (hasPlan) count++;
-  if (hasPhases) count++;
-  if (hasArch) count++;
-  // 3/3 → 13-14, 2/3 → 10-12, 1/3 → 6-9, 0/3 ama docs var → 4-5
-  if (count === 3) score = 14;
-  else if (count === 2) score = 11;
-  else if (count === 1) score = 7;
-  else score = 5;
-  // kalite: ortalama içerik uzunluğu > 1000 byte → +0, < 300 → -2 (yüzeysel)
-  const totalBytes = docFiles.reduce((s, f) => s + readSafe(`docs/${f}`).length, 0);
-  if (docFiles.length > 0 && totalBytes / docFiles.length < 300) {
-    score = Math.max(score - 2, 1);
-    evidence.push({ path: "docs/*", lines: null, note: "ortalama içerik <300 byte (yüzeysel)" });
-  }
+
+  // Bir doküman "sayılması" için içerik taşımalı — 3 adet 2-byte placeholder
+  // dosya eskiden 12/14 alıyordu.
+  const SUBSTANTIVE = 500;
+  const withContent = docFiles.map((f) => ({ f, c: readSafe(f) }));
+  const substantive = withContent.filter((x) => x.c.length >= SUBSTANTIVE);
+
+  evidence.push({
+    path: `${docDir}/`,
+    lines: null,
+    note: `${docFiles.length} markdown (alt klasörler dahil), ${substantive.length} tanesi ≥${SUBSTANTIVE} byte: ${substantive.slice(0, 8).map((x) => `${basename(x.f)}=${x.c.length}b`).join(", ") || "yok"}`,
+  });
+
+  const hasIn = (re) => substantive.some((x) => re.test(basename(x.f)));
+  const hasPlan = hasIn(/plan|roadmap|backlog/i);
+  const hasPhases = hasIn(/phase|faz|stage|asama|aşama|milestone|sprint/i);
+  const hasArch = hasIn(/architecture|mimari|design|tasarim|tasarım|adr/i);
+  const count = [hasPlan, hasPhases, hasArch].filter(Boolean).length;
+
+  let score = count === 3 ? 11 : count === 2 ? 8 : count === 1 ? 5 : substantive.length > 0 ? 3 : 1;
+
+  // Yapısal kalite bonusu (0-3): ortalama byte yerine gerçek yapı. Eski
+  // "ortalama <300 byte → -2" kuralı tek büyük dosya eklenerek bypass
+  // ediliyordu.
+  const allDocText = substantive.map((x) => x.c).join("\n");
+  const headings = (allDocText.match(/^#{1,6}\s+\S/gm) || []).length;
+  const codeBlocks = Math.floor((allDocText.match(/^```/gm) || []).length / 2);
+  const tables = (allDocText.match(/^\|.+\|\s*$/gm) || []).length;
+  const diagrams = /```mermaid|!\[.+\]\(|<img\s/i.test(allDocText);
+  let bonus = 0;
+  if (headings >= 12) bonus++;
+  if (codeBlocks >= 3 || tables >= 5) bonus++;
+  if (diagrams) bonus++;
+  score = Math.min(score + bonus, 14);
+  evidence.push({
+    path: `${docDir}/* yapı`,
+    lines: null,
+    note: `${headings} başlık, ${codeBlocks} kod bloğu, ${tables} tablo satırı, diyagram/görsel=${diagrams} → +${bonus}`,
+  });
+
   return {
     criterion: "docs",
-    score: Math.min(score, 14),
+    score,
     max: 14,
-    rationale: `docs/ klasörü var, ${docFiles.length} dosya. Plan/phases/architecture: ${count}/3.`,
+    rationale: `${docDir}/ altında ${substantive.length} içerikli doküman. Plan=${hasPlan}, aşamalar=${hasPhases}, mimari=${hasArch} (${count}/3). Yapı bonusu +${bonus}.`,
     evidence,
   };
 }
@@ -109,36 +227,43 @@ function scoreReadme() {
   if (!readme) {
     return { criterion: "readme", score: 0, max: 14, rationale: "README.md yok veya boş.", evidence: [{ path: "README.md", lines: null, note: "yok" }] };
   }
-  // 5 boyut × 2.8
   const dims = [];
-  // AI tool listesi
-  const aiToolMatch = /(claude code|cursor|copilot|chatgpt|anthropic|ai tools? used|ai-?assist)/i.test(readme);
-  dims.push({ name: "AI tool listesi", got: aiToolMatch });
-  // MCP listesi
-  const mcpMatch = /\bmcp\b/i.test(readme) || /model context protocol/i.test(readme);
-  dims.push({ name: "MCP listesi", got: mcpMatch });
-  // Deploy URL (vercel.app, netlify, fly.dev, etc.)
-  const deployMatch = /(https?:\/\/[a-z0-9-]+\.(vercel\.app|netlify\.app|fly\.dev|onrender\.com|herokuapp\.com|railway\.app|deno\.dev|workers\.dev|github\.io))/i.test(readme);
-  dims.push({ name: "Deploy URL", got: deployMatch });
-  // Kurulum/env net
-  const hasInstall = /(npm install|pnpm install|yarn install|pip install|cargo)/i.test(readme);
-  const hasEnvExample = exists(".env.example") || exists(".env.sample");
-  const envInReadme = /\.env(\.example)?|environment variable|env var/i.test(readme);
-  const installOk = hasInstall && (hasEnvExample || envInReadme);
-  dims.push({ name: "Kurulum/env", got: installOk });
-  // Görsel
-  const visualMatch = /!\[.+\]\(.+\)/.test(readme) || /<img\s+/i.test(readme);
-  dims.push({ name: "Görsel/screenshot", got: visualMatch });
+
+  dims.push({ name: "AI tool listesi", got: /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|windsurf|codeium|ai tools? used|ai-?assist)/i.test(readme) });
+  dims.push({ name: "MCP listesi", got: /\bmcp\b/i.test(readme) || /model context protocol/i.test(readme) });
+
+  const deployUrls = findDeployUrls();
+  dims.push({ name: "Deploy URL", got: deployUrls.length > 0 });
+
+  const hasInstall = /(npm|pnpm|yarn|bun)\s+(install|i|ci)\b|pip install|poetry install|go mod download|cargo build|mvn install|gradle build|composer install|bundle install/i.test(readme);
+  const hasEnvExample = exists(".env.example") || exists(".env.sample") || exists(".env.template");
+  const envInReadme = /\.env(\.example)?|environment variable|env var|ortam değişken/i.test(readme);
+  dims.push({ name: "Kurulum/env", got: hasInstall && (hasEnvExample || envInReadme) });
+
+  // Görsel: referans verilen yerel dosya gerçekten var mı? Eskiden salt
+  // `![x](y)` regex'i yeterliydi, hedefin varlığına bakılmıyordu.
+  const imgRefs = [...readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1].trim());
+  const htmlImgs = /<img\s+[^>]*src=/i.test(readme);
+  const localImgOk = imgRefs.some((r) => (/^https?:\/\//i.test(r) ? true : exists(r.replace(/^\.?\//, ""))));
+  dims.push({ name: "Görsel/screenshot", got: localImgOk || htmlImgs });
+  if (imgRefs.length > 0 && !localImgOk && !htmlImgs) {
+    evidence.push({ path: "README.md", lines: null, note: `${imgRefs.length} görsel referansı var ama hiçbiri çözülemedi (ör. ${imgRefs[0]})` });
+  }
 
   let score = 0;
+  const per = 14 / dims.length; // 2.8
   for (const d of dims) {
-    if (d.got) score += 2.8;
+    if (d.got) score += per;
     evidence.push({ path: "README.md", lines: null, note: `${d.name}: ${d.got ? "var" : "yok"}` });
   }
-  score = Math.round(score);
+  if (deployUrls.length > 0) {
+    evidence.push({ path: "deploy URL", lines: null, note: deployUrls.slice(0, 2).join(", ") });
+  }
+  score = Math.min(Math.round(score), 14);
+
   return {
     criterion: "readme",
-    score: Math.min(score, 14),
+    score,
     max: 14,
     rationale: `5 boyut: ${dims.map((d) => `${d.name}=${d.got ? "✓" : "✗"}`).join(", ")}.`,
     evidence,
@@ -150,111 +275,72 @@ function scoreAiEvidence() {
   const evidence = [];
   let score = 0;
 
-  // co-author count + total commits
-  const coAuthorOut = sh(`git log --format='%B' -200 | grep -ci 'co-authored-by' || true`).trim();
-  const coAuthorCount = parseInt(coAuthorOut, 10) || 0;
-  const totalCommitsOut = sh(`git log --oneline | wc -l`).trim();
-  const totalCommits = parseInt(totalCommitsOut, 10) || 0;
+  // DÜZELTME: eskiden `git log | grep -ci 'co-authored-by'` EŞLEŞEN SATIRI
+  // sayıyordu, commit'i değil — iki trailer'lı bir commit iki kez sayılıyor ve
+  // oran %100'ü aşabiliyordu (ölçümde %225 gibi değerler). Artık commit bazında.
+  const coAuthorCount = COMMITS.filter((c) => /co-authored-by/i.test(c.body)).length;
+  const totalCommits = COMMITS.length;
   const ratio = totalCommits > 0 ? coAuthorCount / totalCommits : 0;
-  evidence.push({ path: "git-log", lines: null, note: `${coAuthorCount}/${totalCommits} commit co-author satırı (${(ratio * 100).toFixed(0)}%)` });
+  evidence.push({ path: "git-log", lines: null, note: `${coAuthorCount}/${totalCommits} commit co-author trailer'ı taşıyor (%${(ratio * 100).toFixed(0)})` });
 
-  // AI yapılandırma klasörü/dosyaları — Claude/Cursor/Copilot/Codex/Gemini/Aider/Continue/Windsurf/Codeium vb.
   const aiConfigCandidates = [
-    ".claude",
-    ".cursor",
-    ".cursorrules",
-    ".github/copilot-instructions.md",
-    ".codex",
-    ".gemini",
-    "GEMINI.md",
-    "AGENTS.md",
-    ".aider.conf.yml",
-    ".aider.conf",
-    ".aiderrc",
-    ".continue",
-    ".windsurf",
-    ".codeium",
-    ".codeiumignore",
-    ".devin",
-    ".tabnine",
-    ".jetbrains-ai",
-    ".zed",
+    ".claude", ".cursor", ".cursorrules", ".github/copilot-instructions.md",
+    ".codex", ".gemini", "GEMINI.md", "AGENTS.md", ".aider.conf.yml", ".aider.conf",
+    ".aiderrc", ".continue", ".windsurf", ".codeium", ".codeiumignore", ".devin",
+    ".tabnine", ".jetbrains-ai", ".zed", ".kilocode", ".roo", ".cline",
   ];
   const aiConfigFound = aiConfigCandidates.filter((p) => exists(p));
-  evidence.push({
-    path: "AI config",
-    lines: null,
-    note: aiConfigFound.length > 0 ? `bulunan: ${aiConfigFound.join(", ")}` : "yok (.claude/.cursor/.codex/.gemini/Copilot/Aider/Continue/Windsurf/Codeium ... hiçbiri)",
-  });
+  evidence.push({ path: "AI config", lines: null, note: aiConfigFound.length > 0 ? `bulunan: ${aiConfigFound.join(", ")}` : "yok" });
 
-  // AI tool listesi — README + docs/ dosyalarında da ara
   const aiToolRe = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|continue\.dev|windsurf|codeium|devin|tabnine|jetbrains\s*ai|zed\s*ai|ai\s+tools?\s+used|ai-?assist)/i;
   const aiToolInReadme = aiToolRe.test(readme);
-  let aiToolInDocs = false;
-  if (exists("docs")) {
-    try {
-      const docMds = readdirSync(join(repo, "docs")).filter((f) => f.endsWith(".md"));
-      aiToolInDocs = docMds.some((f) => aiToolRe.test(readSafe(`docs/${f}`)));
-    } catch {}
-  }
+  const docDir = ["docs", "doc", "documentation"].find((d) => exists(d));
+  const aiToolInDocs = docDir
+    ? walk(docDir, 3).some((f) => /\.mdx?$/i.test(f) && aiToolRe.test(readSafe(rel(f))))
+    : false;
   const aiToolMatch = aiToolInReadme || aiToolInDocs;
   evidence.push({ path: "README.md + docs/", lines: null, note: aiToolMatch ? `AI tool listesi var${aiToolInDocs && !aiToolInReadme ? " (docs/ içinde)" : ""}` : "AI tool listesi yok" });
 
-  // Proje context dosyası (Claude/Cursor/Codex/Gemini/Copilot tarzı) — root + docs/ + herhangi bir alt klasör
   const contextFileNames = ["CLAUDE.md", "CURSOR.md", "AGENTS.md", "GEMINI.md", "CODEX.md", "COPILOT.md", ".cursorrules"];
   const contextFiles = [];
-  // Root level
   for (const p of contextFileNames) {
     const c = readSafe(p);
-    if (c.length > 0) contextFiles.push({ path: p, content: c });
+    if (c.length > 0) contextFiles.push({ path: p, len: c.length });
   }
-  // docs/ altında da ara
-  if (exists("docs")) {
+  if (docDir) {
     for (const p of contextFileNames) {
-      const dp = `docs/${p}`;
-      const c = readSafe(dp);
-      if (c.length > 0) contextFiles.push({ path: dp, content: c });
+      const c = readSafe(`${docDir}/${p}`);
+      if (c.length > 0) contextFiles.push({ path: `${docDir}/${p}`, len: c.length });
     }
-    // docs/ içinde AI-related dosyalar (AI-WORKFLOW.md, ai-strategy.md, ai-collaboration.md vb.)
-    try {
-      const docFiles = readdirSync(join(repo, "docs")).filter((f) => /^ai[_-]/i.test(f) && f.endsWith(".md"));
-      for (const f of docFiles) {
-        const c = readSafe(`docs/${f}`);
-        if (c.length > 200) contextFiles.push({ path: `docs/${f}`, content: c });
+    for (const abs of walk(docDir, 2)) {
+      const b = basename(abs);
+      if (/^ai[_-]/i.test(b) && /\.mdx?$/i.test(b)) {
+        const c = readSafe(rel(abs));
+        if (c.length > 200) contextFiles.push({ path: rel(abs), len: c.length });
       }
-    } catch {}
+    }
   }
-  // Deduplicate by path
   const seenPaths = new Set();
-  const uniqueContextFiles = contextFiles.filter((x) => { if (seenPaths.has(x.path)) return false; seenPaths.add(x.path); return true; });
-  const totalContextBytes = uniqueContextFiles.reduce((s, x) => s + x.content.length, 0);
+  const uniqueContext = contextFiles.filter((x) => { if (seenPaths.has(x.path)) return false; seenPaths.add(x.path); return true; });
+  const totalContextBytes = uniqueContext.reduce((s, x) => s + x.len, 0);
   const substantiveContext = totalContextBytes > 500;
-  if (uniqueContextFiles.length > 0) {
-    evidence.push({
-      path: "context file(s)",
-      lines: null,
-      note: `${uniqueContextFiles.map((x) => `${x.path}=${x.content.length}b`).join(", ")}${substantiveContext ? "" : " (toplam placeholder)"}`,
-    });
-  } else {
-    evidence.push({ path: "context file", lines: null, note: "CLAUDE.md/CURSOR.md/AGENTS.md/GEMINI.md vb. hiçbiri yok (root + docs/)" });
-  }
+  evidence.push({
+    path: "context file(s)",
+    lines: null,
+    note: uniqueContext.length > 0
+      ? `${uniqueContext.map((x) => `${x.path}=${x.len}b`).join(", ")}${substantiveContext ? "" : " (placeholder seviyesinde)"}`
+      : "CLAUDE.md/AGENTS.md/GEMINI.md vb. hiçbiri yok",
+  });
 
-  // prompts/ archive
-  const hasPrompts = exists("prompts") || exists("ai-logs") || exists("conversations") || exists("ai-history");
-  if (hasPrompts) evidence.push({ path: "prompts|ai-logs|conversations|ai-history", lines: null, note: "var" });
+  const hasPrompts = ["prompts", "ai-logs", "conversations", "ai-history", "transcripts"].some((d) => exists(d));
+  if (hasPrompts) evidence.push({ path: "prompt arşivi", lines: null, note: "var" });
 
-  // Skorlama
-  // Co-author ratio: ≥30% → +8, 10-30% → +5, >0% → +2, 0 → 0
   if (ratio >= 0.30) score += 8;
   else if (ratio >= 0.10) score += 5;
   else if (coAuthorCount > 0) score += 2;
-  // AI config klasör/dosya (Claude/Cursor/Codex/Gemini/Copilot/Aider/Continue/Windsurf/Codeium ...): +4
   if (aiConfigFound.length > 0) score += 4;
-  // Substantive context dosyası (CLAUDE.md/CURSOR.md/AGENTS.md/GEMINI.md vb. toplam >500b): +3
   if (substantiveContext) score += 3;
-  // README'de AI tool listesi: +4
   if (aiToolMatch) score += 4;
-  // Prompt arşivi: +2 bonus
   if (hasPrompts) score += 2;
 
   score = Math.min(score, 20);
@@ -262,7 +348,7 @@ function scoreAiEvidence() {
     criterion: "ai-evidence",
     score,
     max: 20,
-    rationale: `${coAuthorCount}/${totalCommits} co-author (${(ratio*100).toFixed(0)}%); AI config: ${aiConfigFound.length>0?aiConfigFound.join("+"):"yok"}; context: ${contextFiles.length>0?contextFiles.map(x=>x.path).join("+")+` (${totalContextBytes}b)`:"yok"}; README'de AI tool=${aiToolMatch}; prompts=${hasPrompts}.`,
+    rationale: `${coAuthorCount}/${totalCommits} co-author (%${(ratio * 100).toFixed(0)}); AI config: ${aiConfigFound.length > 0 ? aiConfigFound.join("+") : "yok"}; context: ${uniqueContext.length > 0 ? `${totalContextBytes}b` : "yok"}; README'de AI tool=${aiToolMatch}; prompt arşivi=${hasPrompts}.`,
     evidence,
   };
 }
@@ -272,212 +358,188 @@ function scoreAgentic() {
   const evidence = [];
   let score = 0;
 
-  // Agent tanımı klasörleri (Claude/Cursor/Codex/Gemini vb. + standalone .agents/)
-  const agentDirCandidates = [
-    ".claude/agents",
-    ".cursor/agents",
-    ".codex/agents",
-    ".gemini/agents",
-    ".continue/agents",
-    ".windsurf/agents",
-    ".agents",
-    "agents",
-  ];
-  const agentDirs = agentDirCandidates.filter((p) => exists(p));
-  let agentCount = 0;
-  for (const d of agentDirs) {
-    try { agentCount += readdirSync(join(repo, d)).filter((f) => /\.(md|json|ya?ml)$/.test(f)).length; } catch {}
+  const AI_ROOTS = [".claude", ".cursor", ".codex", ".gemini", ".continue", ".windsurf", ".agents"];
+  const PLACEHOLDER = 200; // byte — altı placeholder sayılır
+
+  // Agent/skill tanımlarını SABİT yol listesiyle değil, AI config kökleri
+  // altında herhangi bir derinlikte arayarak bul. Eski sabit liste
+  // `.claude/skills/<x>/agents/` yolunu görmüyordu — bu projenin kendi 5 agent
+  // tanımı bu yüzden "agent klasörü: yok" diye sayılıyordu.
+  const agentFiles = [];
+  const skillFiles = [];
+  for (const root of AI_ROOTS) {
+    if (!exists(root)) continue;
+    for (const abs of walk(root, 5)) {
+      if (!/\.(md|mdx|json|ya?ml|toml)$/i.test(abs)) continue;
+      const r = rel(abs);
+      const size = readSafe(r).length;
+      if (/(^|\/)agents?(\/|$)/i.test(r)) agentFiles.push({ path: r, size });
+      else if (/(^|\/)skills?(\/|$)/i.test(r)) skillFiles.push({ path: r, size });
+    }
+  }
+  // Kök seviyedeki standalone agents/ klasörü — uygulama kaynak klasörü de
+  // olabileceği için yalnız tanım dosyalarını (md/yaml/toml) say.
+  for (const d of ["agents", "agent"]) {
+    if (!exists(d)) continue;
+    for (const abs of walk(d, 3)) {
+      if (!/\.(md|mdx|ya?ml|toml)$/i.test(abs)) continue;
+      const r = rel(abs);
+      agentFiles.push({ path: r, size: readSafe(r).length });
+    }
   }
 
-  // Skill tanımı klasörleri (+ standalone .agents/skills)
-  const skillDirCandidates = [
-    ".claude/skills",
-    ".cursor/skills",
-    ".codex/skills",
-    ".gemini/skills",
-    ".continue/skills",
-    ".agents/skills",
-  ];
-  const skillDirs = skillDirCandidates.filter((p) => exists(p));
-  let skillCount = 0;
-  for (const d of skillDirs) {
-    try { skillCount += readdirSync(join(repo, d)).length; } catch {}
-  }
+  const realAgents = agentFiles.filter((x) => x.size >= PLACEHOLDER);
+  const realSkills = skillFiles.filter((x) => x.size >= PLACEHOLDER);
 
-  // Repo genelinde AI/agentic dosya taraması (agent, skill, rule, subagent, workflow vb.)
-  let scatteredAgentFiles = 0;
-  let scatteredSkillFiles = 0;
-  const allFiles = walk(".", 4);
-  // Agent-like files anywhere: *-agent.md, agent-*.md, *agent*.md, subagent*, rule*.md
-  const agentLikePatterns = /[-_]agent\.md$|^agent[-_]|subagent|^rule[sr]?\.md$|[-_]rules?\.md$/i;
-  const agentLikeFiles = allFiles.filter((f) => agentLikePatterns.test(basename(f)));
-  // Exclude files already counted in agentDirs
-  const agentLikeOutside = agentLikeFiles.filter((f) => {
-    const rel = f.slice(repo.length + 1);
-    return !agentDirs.some((d) => rel.startsWith(d));
+  evidence.push({
+    path: "agent tanımları",
+    lines: null,
+    note: agentFiles.length === 0
+      ? "yok"
+      : `${agentFiles.length} dosya, ${realAgents.length} tanesi ≥${PLACEHOLDER}b: ${realAgents.slice(0, 6).map((x) => `${x.path}=${x.size}b`).join(", ") || "hepsi placeholder"}`,
   });
-  if (agentLikeOutside.length > 0) {
-    scatteredAgentFiles = agentLikeOutside.length;
-    evidence.push({ path: "agent/rule dosyaları (dağınık)", lines: null, note: `${scatteredAgentFiles} dosya: ${agentLikeOutside.slice(0,10).map(f => f.slice(repo.length+1)).join(", ")}${scatteredAgentFiles>10?"...":""}` });
-  }
-  // SKILL.md + AI-related files anywhere (outside known skill dirs)
-  const skillLikePatterns = /^SKILL\.md$|^skill[-_]|[-_]skill\.md$/i;
-  const skillLikeFiles = allFiles.filter((f) => skillLikePatterns.test(basename(f)));
-  const skillLikeOutside = skillLikeFiles.filter((f) => {
-    const rel = f.slice(repo.length + 1);
-    return !skillDirs.some((d) => rel.startsWith(d));
+  evidence.push({
+    path: "skill tanımları",
+    lines: null,
+    note: skillFiles.length === 0
+      ? "yok"
+      : `${skillFiles.length} dosya, ${realSkills.length} tanesi ≥${PLACEHOLDER}b: ${realSkills.slice(0, 6).map((x) => `${x.path}=${x.size}b`).join(", ") || "hepsi placeholder"}`,
   });
-  if (skillLikeOutside.length > 0) {
-    scatteredSkillFiles = skillLikeOutside.length;
-    evidence.push({ path: "skill dosyaları (dağınık)", lines: null, note: `${scatteredSkillFiles} dosya: ${skillLikeOutside.slice(0,10).map(f => f.slice(repo.length+1)).join(", ")}` });
-  }
 
-  // Slash command / workflow tanımları
-  const commandDirCandidates = [".claude/commands", ".cursor/commands", ".codex/commands", ".gemini/commands"];
-  const commandDirs = commandDirCandidates.filter((p) => exists(p));
+  const commandDirs = AI_ROOTS.map((r) => `${r}/commands`).filter((p) => exists(p));
+  if (commandDirs.length > 0) evidence.push({ path: "slash command", lines: null, note: commandDirs.join(", ") });
 
-  // MCP konfigürasyonu — birden çok yol
   const mcpFileCandidates = [
-    ".mcp.json",
-    "mcp.json",
-    "claude_desktop_config.json",
-    ".cursor/mcp.json",
-    ".codex/mcp.json",
-    ".gemini/mcp.json",
-    ".continue/mcp.json",
-    ".windsurf/mcp.json",
+    ".mcp.json", "mcp.json", "claude_desktop_config.json", ".cursor/mcp.json",
+    ".codex/mcp.json", ".gemini/mcp.json", ".continue/mcp.json", ".windsurf/mcp.json",
+    ".vscode/mcp.json",
   ];
   const mcpFiles = mcpFileCandidates.filter((p) => exists(p));
   let mcpServers = [];
   for (const p of mcpFiles) {
     try {
       const parsed = JSON.parse(readSafe(p));
-      const keys = Object.keys(parsed.mcpServers || parsed.servers || parsed.mcp_servers || {});
-      mcpServers.push(...keys);
-    } catch {}
+      mcpServers.push(...Object.keys(parsed.mcpServers || parsed.servers || parsed.mcp_servers || {}));
+    } catch { /* bozuk JSON */ }
   }
   mcpServers = [...new Set(mcpServers)];
-
-  // Hooks — Claude veya Cursor settings içinde
-  const hooksCandidates = [".claude/settings.json", ".cursor/settings.json", ".codex/settings.json"];
-  let hasHooks = false;
-  for (const p of hooksCandidates) {
-    if (exists(p) && /["']?hooks["']?\s*:/.test(readSafe(p))) { hasHooks = true; break; }
-  }
-
-  // n8n workflow detection — automation/agentic sinyal
-  let hasN8n = false;
-  let n8nNote = "";
-  // Check README/docs for n8n references
-  const n8nInReadme = /\bn8n\b/i.test(readme);
-  // Check for n8n workflow JSON files
-  const n8nWorkflowFiles = walk(".", 3).filter((f) => /n8n.*\.json$/i.test(basename(f)) || /workflow.*\.json$/i.test(basename(f)));
-  // Check for docker-compose with n8n
-  const dockerCompose = readSafe("docker-compose.yml") + readSafe("docker-compose.yaml");
-  const n8nInDocker = /\bn8n\b/i.test(dockerCompose);
-  // Check for n8n references in any config/docs
-  const n8nInDocs = walk("docs", 2).some((f) => /\bn8n\b/i.test(readSafe(f.slice(repo.length + 1))));
-  hasN8n = n8nInReadme || n8nWorkflowFiles.length > 0 || n8nInDocker || n8nInDocs;
-  if (hasN8n) {
-    const sources = [];
-    if (n8nInReadme) sources.push("README");
-    if (n8nWorkflowFiles.length > 0) sources.push(`${n8nWorkflowFiles.length} workflow JSON`);
-    if (n8nInDocker) sources.push("docker-compose");
-    if (n8nInDocs) sources.push("docs/");
-    n8nNote = `n8n tespit: ${sources.join(", ")}`;
-  }
-
-  evidence.push({
-    path: "agent klasörü",
-    lines: null,
-    note: agentDirs.length > 0 ? `${agentDirs.join(", ")} (${agentCount} dosya)` : "yok",
-  });
-  evidence.push({
-    path: "skill klasörü",
-    lines: null,
-    note: skillDirs.length > 0 ? `${skillDirs.join(", ")} (${skillCount} dosya)` : "yok",
-  });
-  if (commandDirs.length > 0) evidence.push({ path: "command klasörü", lines: null, note: commandDirs.join(", ") });
   evidence.push({
     path: "MCP config",
     lines: null,
-    note: mcpFiles.length > 0 ? `${mcpFiles.join(", ")} → MCP'ler: ${mcpServers.join(", ") || "tanımsız"}` : "yok",
+    note: mcpFiles.length > 0 ? `${mcpFiles.join(", ")} → ${mcpServers.join(", ") || "server tanımsız"}` : "yok",
   });
-  if (hasHooks) evidence.push({ path: "hooks", lines: null, note: "tanımlı" });
-  if (hasN8n) evidence.push({ path: "n8n", lines: null, note: n8nNote });
 
-  // Skorlama:
-  if (agentDirs.length > 0) score += 4 + Math.min(agentCount, 4);
-  else if (scatteredAgentFiles > 0) score += 2 + Math.min(scatteredAgentFiles, 4); // dağınık agent/rule dosyaları
-  if (skillDirs.length > 0) score += 4 + Math.min(skillCount, 4);
-  else if (scatteredSkillFiles > 0) score += 2 + Math.min(scatteredSkillFiles, 3); // dağınık skill dosyaları
+  let hasHooks = false;
+  for (const p of AI_ROOTS.map((r) => `${r}/settings.json`)) {
+    if (exists(p) && /["']?hooks["']?\s*:/.test(readSafe(p))) { hasHooks = true; break; }
+  }
+  if (hasHooks) evidence.push({ path: "hooks", lines: null, note: "tanımlı" });
+
+  // n8n: "workflow" içeren herhangi bir .json veya README'de tek kelime artık
+  // yetmiyor (eskiden "n8n kullanmadık" yazmak +3 veriyordu). Gerçek bir n8n
+  // workflow dosyası veya tanımlı bir n8n servisi gerekir.
+  const n8nSources = [];
+  const n8nWorkflowFiles = (TRACKED.length ? TRACKED : walk(".", 4).map(rel))
+    .filter((f) => /\.json$/i.test(f) && !SKIP_PATH.test(f))
+    .filter((f) => {
+      const c = readSafe(f);
+      return c.length < 4_000_000 && /"nodes"\s*:/.test(c) && /n8n-nodes|"n8nVersion"|"workflowData"/i.test(c);
+    });
+  if (n8nWorkflowFiles.length > 0) n8nSources.push(`${n8nWorkflowFiles.length} n8n workflow JSON`);
+  const dockerCompose = readSafe("docker-compose.yml") + readSafe("docker-compose.yaml") + readSafe("compose.yml");
+  if (/\bn8nio\/n8n\b|image:\s*n8n/i.test(dockerCompose)) n8nSources.push("docker-compose servisi");
+  const hasN8n = n8nSources.length > 0;
+  if (hasN8n) evidence.push({ path: "n8n", lines: null, note: n8nSources.join(", ") });
+
+  if (realAgents.length > 0) score += 4 + Math.min(realAgents.length, 4);
+  else if (agentFiles.length > 0) score += 2;
+  if (realSkills.length > 0) score += 4 + Math.min(realSkills.length, 4);
+  else if (skillFiles.length > 0) score += 2;
   if (mcpFiles.length > 0) score += 4 + Math.min(mcpServers.length, 2);
   if (commandDirs.length > 0) score += 1;
   if (hasHooks) score += 1;
-  if (hasN8n) score += 3; // n8n workflow automation bonus
+  if (hasN8n) score += 3;
 
   score = Math.min(score, 20);
   return {
     criterion: "agentic",
     score,
     max: 20,
-    rationale: `agent klasörü=${agentDirs.length>0?agentDirs.join("+")+`(${agentCount})`:"yok"}, skill=${skillDirs.length>0?skillDirs.join("+")+`(${skillCount})`:"yok"}, MCP=${mcpFiles.length>0?mcpServers.join(",")||"var":"yok"}, hooks=${hasHooks}.`,
+    rationale: `${realAgents.length} gerçek agent tanımı, ${realSkills.length} gerçek skill, MCP=${mcpFiles.length > 0 ? mcpServers.join(",") || "var" : "yok"}, slash command=${commandDirs.length > 0}, hooks=${hasHooks}, n8n=${hasN8n}.`,
     evidence,
   };
 }
 
 // ---------- tests (max 4) ----------
+// Stack-agnostik: eski sürüm dört alt maddenin de sol tarafını yalnız KÖK
+// package.json'dan besliyordu, bu yüzden Python/Go/Java/Rust takımları ve
+// monorepo'lar yapısal olarak 0/4 alıyordu.
 function scoreTests() {
   const evidence = [];
   let score = 0;
 
-  let pkg = {};
-  try { pkg = JSON.parse(readSafe("package.json") || "{}"); } catch {}
-  const allDeps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-  const scripts = pkg.scripts || {};
+  const deps = allDepsText();
+  const files = TRACKED.length ? TRACKED : walk(".", 6).map(rel);
+  const testFiles = files.filter((f) => !SKIP_PATH.test(f) && (
+    /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(basename(f)) ||
+    /^test_.+\.py$|_test\.py$/i.test(basename(f)) ||
+    /_test\.go$/i.test(basename(f)) ||
+    /(^|\/)src\/test\/(java|kotlin)\//i.test(f) ||
+    /Tests?\.(cs|swift|kt|java)$/i.test(basename(f)) ||
+    /(^|\/)tests?\/.+\.(rs|php|rb|exs?)$/i.test(f) ||
+    /Test\.php$|_spec\.rb$|_test\.exs$/i.test(basename(f))
+  ));
 
-  // 1. Backend unit test
-  const hasUnitDep = ["vitest", "jest", "mocha", "ava", "tap"].some((d) => allDeps[d]);
-  const hasUnitFiles = walk(".", 4).some((f) => /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(basename(f))) ||
-    walk(".", 4).some((f) => /^test_.+\.py$/.test(basename(f)));
-  const hasUnit = hasUnitDep && hasUnitFiles;
+  // 1. Unit test — dosya VEYA bağımlılık (eskiden VE idi; Python/Go repolar
+  //    test dosyası olmasına rağmen 0 alıyordu)
+  // Tırnaklı biçim yalnız package.json'da var; requirements.txt/go.mod/
+  // Cargo.toml tırnaksız yazar. "ava"/"tap" düz kelime olarak çok yanlış
+  // eşleşir, onlar tırnaklı kalır.
+  const unitDep = /"(ava|tap)"|\b(vitest|jest|mocha|pytest|unittest|junit|testng|xunit|nunit|phpunit|rspec|minitest|testify)\b/i.test(deps);
+  const unitFiles = testFiles.filter((f) => !/e2e|cypress|playwright/i.test(f));
+  const hasUnit = unitFiles.length > 0 || unitDep;
   if (hasUnit) score += 1;
-  evidence.push({ path: "backend unit", lines: null, note: `dep=${hasUnitDep}, file=${hasUnitFiles}` });
+  evidence.push({ path: "unit test", lines: null, note: `${unitFiles.length} test dosyası, bağımlılık=${unitDep}${unitFiles.length ? ` (ör. ${unitFiles[0]})` : ""}` });
 
-  // 2. Frontend component test
-  const hasRtl = ["@testing-library/react", "@testing-library/dom", "@testing-library/vue", "vue-test-utils"].some((d) => allDeps[d]);
-  const hasTsx = walk(".", 4).some((f) => /\.(test|spec)\.(tsx|jsx)$/.test(basename(f)));
-  const hasComponent = hasRtl && hasTsx;
+  // 2. Component/UI test
+  const compDep = /@testing-library\/(react|dom|vue|angular|svelte)|vue-test-utils|enzyme|@vue\/test-utils|espresso|XCTest|compose-ui-test/i.test(deps);
+  const compFiles = testFiles.filter((f) => /\.(test|spec)\.(tsx|jsx|vue|svelte)$/i.test(basename(f)) || /androidTest|UITests?/i.test(f));
+  const hasComponent = compFiles.length > 0 || (compDep && unitFiles.length > 0);
   if (hasComponent) score += 1;
-  evidence.push({ path: "frontend component", lines: null, note: `RTL=${hasRtl}, *.test.tsx=${hasTsx}` });
+  evidence.push({ path: "component test", lines: null, note: `bağımlılık=${compDep}, dosya=${compFiles.length}` });
 
-  // 3. E2E test
-  const hasE2eDep = ["@playwright/test", "playwright", "cypress", "puppeteer"].some((d) => allDeps[d]);
-  const hasE2eConfig = exists("playwright.config.ts") || exists("playwright.config.js") || exists("cypress.config.ts") || exists("cypress.config.js") || exists("cypress.json");
-  const hasE2eDir = exists("e2e") || exists("tests/e2e") || exists("cypress");
-  const hasE2e = hasE2eDep && (hasE2eConfig || hasE2eDir);
+  // 3. E2E
+  const e2eDep = /@playwright\/test|\b(playwright|cypress|puppeteer|selenium|webdriverio|detox|maestro)\b/i.test(deps);
+  const e2eConfig = files.some((f) => /^(playwright|cypress)\.config\./i.test(basename(f))) || exists("cypress.json") || exists(".maestro");
+  const e2eDir = ["e2e", "tests/e2e", "cypress", "test/e2e", "integration-tests"].some((p) => exists(p));
+  const hasE2e = e2eDep && (e2eConfig || e2eDir || testFiles.some((f) => /e2e|cypress/i.test(f)));
   if (hasE2e) score += 1;
-  evidence.push({ path: "E2E", lines: null, note: `dep=${hasE2eDep}, config=${hasE2eConfig}, dir=${hasE2eDir}` });
+  evidence.push({ path: "E2E", lines: null, note: `bağımlılık=${e2eDep}, config=${e2eConfig}, klasör=${e2eDir}` });
 
-  // 4. test script + CI
-  const hasTestScript = !!(scripts.test || scripts["test:ci"] || scripts["test:unit"]);
-  const hasCi = exists(".github/workflows");
-  let hasCiTest = false;
-  if (hasCi) {
-    try {
-      const workflows = readdirSync(join(repo, ".github/workflows")).filter((f) => /\.ya?ml$/.test(f));
-      hasCiTest = workflows.some((f) => /\b(test|vitest|jest|pytest|playwright)\b/i.test(readSafe(`.github/workflows/${f}`)));
-    } catch {}
+  // 4. Çalıştırılabilirlik: test script'i VEYA CI test adımı
+  let hasTestScript = false;
+  for (const m of collectManifests()) {
+    if (m.path.endsWith("package.json")) {
+      try {
+        const sc = JSON.parse(m.content).scripts || {};
+        if (Object.keys(sc).some((k) => /^test(:|$)|^e2e(:|$)|coverage/i.test(k))) { hasTestScript = true; break; }
+      } catch { /* bozuk */ }
+    } else if (/\[tool\.pytest|addopts|^\s*test\s*:/im.test(m.content)) { hasTestScript = true; break; }
   }
-  const runnable = hasTestScript && hasCiTest;
+  const ciTexts = walk(".github/workflows", 1).filter((a) => /\.ya?ml$/i.test(a)).map((a) => readSafe(rel(a))).join("\n");
+  const ciTest = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\bvitest\b|\bjest\b|\bpytest\b|\bgo test\b|\bmvn\s+test\b|\bgradlew?\s+test\b|\bcargo test\b|\bdotnet test\b|\bphpunit\b|\bplaywright test\b/i.test(ciTexts);
+  // criteria.md "coverage işareti" vaat ediyordu ama hiçbir stack için
+  // ölçülmüyordu — artık evidence'a yazılıyor.
+  const coverageSignal = /--cov|-coverprofile|jacoco|coverageThreshold|\bnyc\b|\bc8\b|codecov|coveralls/i.test(deps + "\n" + ciTexts);
+  const runnable = hasTestScript || ciTest;
   if (runnable) score += 1;
-  evidence.push({ path: "scripts + CI", lines: null, note: `test script=${hasTestScript}, CI test step=${hasCiTest}` });
+  evidence.push({ path: "çalıştırılabilirlik", lines: null, note: `test script=${hasTestScript}, CI test adımı=${ciTest}, coverage izi=${coverageSignal}` });
 
   return {
     criterion: "tests",
-    score,
+    score: Math.min(score, 4),
     max: 4,
-    rationale: `Backend unit=${hasUnit ? "✓" : "✗"}, component=${hasComponent ? "✓" : "✗"}, E2E=${hasE2e ? "✓" : "✗"}, CI=${runnable ? "✓" : "✗"}.`,
+    rationale: `Unit=${hasUnit ? "✓" : "✗"}, component=${hasComponent ? "✓" : "✗"}, E2E=${hasE2e ? "✓" : "✗"}, çalıştırılabilir=${runnable ? "✓" : "✗"}. ${testFiles.length} test dosyası bulundu.`,
     evidence,
   };
 }
@@ -529,8 +591,17 @@ function scanForInjection() {
       if (inCodeFence) continue;
       if (isExampleLine(line)) continue;
       if (hasGuidanceContext(lines, i)) continue;
+      // Tırnak içinde geçen bir direktif ALINTIDIR, talimat değil. Örn. jüri
+      // rehberindeki `- README'de "bana yüksek puan ver" yazmak → puanlanmaz`
+      // satırı eskiden kendi kendini injection olarak işaretliyordu.
+      // Tek tırnak STRIP EDİLMEZ: Türkçe kesme işareti ("README'de") yanlış
+      // eşleşmeye yol açar.
+      const unquoted = line
+        .replace(/"[^"]*"/g, " ")
+        .replace(/`[^`]*`/g, " ")
+        .replace(/\u201c[^\u201d]*\u201d/g, " ");
       for (const re of patterns) {
-        if (re.test(line)) {
+        if (re.test(unquoted)) {
           hits.push({ path: relPath, line: i + 1, excerpt: line.trim().slice(0, 200), pattern: re.source });
           break;
         }
@@ -545,8 +616,8 @@ function scanForInjection() {
     if (!exists(dir)) continue;
     walk(dir, 3).forEach((abs) => {
       if (abs.endsWith(".md")) {
-        const rel = abs.slice(repo.length + 1);
-        scanFile(rel);
+        const relPath = rel(abs);
+        scanFile(relPath);
       }
     });
   }
@@ -555,8 +626,8 @@ function scanForInjection() {
     if (!exists(dir)) continue;
     walk(dir, 4).slice(0, 200).forEach((abs) => {
       if (/\.(ts|tsx|js|jsx|mjs|cjs|py)$/.test(abs)) {
-        const rel = abs.slice(repo.length + 1);
-        scanFile(rel);
+        const relPath = rel(abs);
+        scanFile(relPath);
       }
     });
   }
@@ -571,27 +642,28 @@ function scanForInjection() {
 }
 
 // ---------- late-commit penalty ----------
-// Hackathon teslim deadline: 2026-05-14 17:30 (TR, +03). Sonrası -5.
-const LATE_CUTOFF_ISO = "2026-05-14T17:30:00+03:00";
+// Teslim deadline'ı. Kaynak koda gömülü olması her yeni hackathon'da script
+// düzenlemeyi gerektiriyordu ve tarih geçtiğinde HER aktif repo "geç"
+// işaretleniyordu. Artık env ile verilir; verilmezse ceza hiç uygulanmaz.
+//   EVAL_LATE_CUTOFF="2026-05-14T17:30:00+03:00"
+const LATE_CUTOFF_ISO = process.env.EVAL_LATE_CUTOFF || "";
+
 function scoreLatePenalty() {
+  const empty = { applied: false, points: 0, cutoff: null, lateCommit: null, lateCommits: [], lateCommitCount: 0 };
+  if (!LATE_CUTOFF_ISO) {
+    return { ...empty, note: "EVAL_LATE_CUTOFF tanımlı değil — geç teslim kontrolü yapılmadı." };
+  }
   const cutoff = new Date(LATE_CUTOFF_ISO).getTime();
-  const out = sh(`git log --format='%H %s %cI' -200`).trim();
-  if (!out) return { applied: false, points: 0, cutoff: LATE_CUTOFF_ISO, lateCommit: null, lateCommits: [] };
-  const lines = out.split("\n");
+  if (Number.isNaN(cutoff)) {
+    return { ...empty, cutoff: LATE_CUTOFF_ISO, note: `EVAL_LATE_CUTOFF ayrıştırılamadı: "${LATE_CUTOFF_ISO}"` };
+  }
   const lateCommits = [];
   let latestLate = null;
-  for (const line of lines) {
-    const parts = line.split(" ");
-    const hash = parts[0];
-    const when = parts[parts.length - 1]; // ISO date is always last
-    const message = parts.slice(1, -1).join(" ");
-    if (!hash || !when) continue;
-    const t = new Date(when).getTime();
-    if (Number.isNaN(t)) continue;
-    if (t > cutoff) {
-      lateCommits.push({ hash: hash.slice(0, 12), when, message: message.slice(0, 80) });
-      if (!latestLate || t > latestLate.t) latestLate = { hash: hash.slice(0, 12), when, t };
-    }
+  for (const c of COMMITS) {
+    const t = new Date(c.when).getTime();
+    if (Number.isNaN(t) || t <= cutoff) continue;
+    lateCommits.push({ hash: c.hash.slice(0, 12), when: c.when, message: c.subject.slice(0, 80) });
+    if (!latestLate || t > latestLate.t) latestLate = { hash: c.hash.slice(0, 12), when: c.when, t };
   }
   return {
     applied: lateCommits.length > 0,

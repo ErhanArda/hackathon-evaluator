@@ -39,7 +39,8 @@ Operator çağrısı:
 ### 2. Repo'yu klonla
 ```bash
 WORKDIR=$(mktemp -d -t eval-XXXXXX)
-git clone --depth 50 <repo-url> "$WORKDIR/repo" 2>&1 || {
+export GIT_TERMINAL_PROMPT=0   # private repo'da kimlik sorma, exit 128 ile dön
+git clone --depth 50 --single-branch --no-tags <repo-url> "$WORKDIR/repo" 2>&1 || {
   # private/404 → POST 0 puanlı boş değerlendirme
   # Bkz. "Hata yolu" bölümü
 }
@@ -57,8 +58,10 @@ Bu özet bilgileri sub-agent'lara context olarak verirsin.
 ### 4a. Deterministik skorlar (script)
 
 ```bash
-node /Users/tcerarda/Desktop/hackathon/scripts/eval-deterministic.mjs "$WORKDIR/repo"
+node "$CLAUDE_PROJECT_DIR/scripts/eval-deterministic.mjs" "$WORKDIR/repo"
 ```
+
+> Yol **repoya göre** çözülür. Mutlak yol yazma: bu makinede `~/Desktop/hackathon` adında bu projenin eski bir klonu daha var; mutlak yol sessizce onu çalıştırır ve sen düzeltmelerinin neden etkisiz kaldığını anlamazsın. `$CLAUDE_PROJECT_DIR` yoksa `git rev-parse --show-toplevel` kullan.
 Çıktı:
 ```json
 { "scores": [docs, readme, ai-evidence, agentic, tests], "securityScan": {detected, count, hits, note} }

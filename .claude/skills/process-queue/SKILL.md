@@ -39,13 +39,26 @@ curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
 Tek `GET /api/teams` ile tüm takımları çek, claim edilen request'lerin teamId'lerine eşle.
 
 ### 4. Repo'ları klonla (paralel, bash background ile)
+
+Tüm workdir'ler **tek bir kök** altında açılır — temizlik adımı böylece tek yolu siler, glob'a hiç ihtiyaç kalmaz.
+
 ```bash
-for r in claimed; do
-  WORKDIR_$i=$(mktemp -d -t eval-XXXXXX)
-  git clone --depth 50 "$REPO_URL" "$WORKDIR_$i/repo" &
+set -u
+ROOT=$(mktemp -d -t evalbatch-XXXXXX)   # tüm batch'in tek kökü
+export GIT_TERMINAL_PROMPT=0            # private repo'da kimlik sorma, hata ver
+
+# her claim edilen request için: REQ_ID ve REPO_URL'i kendi döngünde doldur
+for REQ_ID in $CLAIMED_IDS; do
+  mkdir -p "$ROOT/$REQ_ID"
+  git clone --depth 50 --single-branch --no-tags \
+    "$(repo_url_of "$REQ_ID")" "$ROOT/$REQ_ID/repo" &
 done
 wait
 ```
+
+Her takımın repo yolu artık `"$ROOT/$REQ_ID/repo"` — indeksli değişken yok, tahmin edilecek bir şey yok.
+
+> **ASLA** `WORKDIR_$i=...` gibi bir atama yazma: bu geçerli bir kabuk ataması değil (exit 127) ve Claude Code'un Bash aracında shell state çağrılar arasında korunmadığı için indeksli değişkenler zaten taşınmaz. `$ROOT`'u her Bash çağrısında yeniden türetmen gerekirse `mktemp` yerine sabit bir yol kullan (ör. `ROOT=/tmp/evalbatch-$$`) ve değerini adımlar arasında metin olarak taşı.
 
 Hata olan repo için (private/404): rationale "Repo erişilemedi" ile 7×0 puan POST + mark done. (Script çağırma — repo path yok)
 
@@ -53,8 +66,10 @@ Hata olan repo için (private/404): rationale "Repo erişilemedi" ile 7×0 puan 
 
 Her takım için ayrı Bash background:
 ```bash
-node /Users/tcerarda/Desktop/hackathon/scripts/eval-deterministic.mjs "$WORKDIR/repo" > /tmp/det-$REQ_ID.json
+node "$CLAUDE_PROJECT_DIR/scripts/eval-deterministic.mjs" "$ROOT/$REQ_ID/repo" > "$ROOT/$REQ_ID/det.json"
 ```
+
+> Yol **repoya göre** çözülür. Mutlak yol yazma: bu makinede `~/Desktop/hackathon` adında bu projenin eski bir klonu daha var ve mutlak yol sessizce onu çalıştırır. `$CLAUDE_PROJECT_DIR` set değilse `git rev-parse --show-toplevel` kullan.
 Wait, parse. 5 kriter (docs, readme, ai-evidence, agentic, tests) anında hazır. UI rozetlerini PATCH'le (analist/ai-evidence/tester agent-state'leri = done, score = ilgili kriter skoru).
 
 `securityScan.detected === true` ise modelNote'a "⚠ prompt-injection N hit" ekle.
@@ -86,8 +101,14 @@ curl -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
 
 ### 8. Workdir'leri temizle
 ```bash
-rm -rf "$WORKDIR_"*
+# Tek kök, glob yok. Guard: yol boş veya beklenmedik bir yerde ise silme.
+case "$ROOT" in
+  /var/folders/*|/tmp/*) [ -n "$ROOT" ] && rm -rf "$ROOT" ;;
+  *) echo "temizlik atlandi — beklenmeyen ROOT: '$ROOT'" >&2 ;;
+esac
 ```
+
+> **Glob kullanma.** `rm -rf "$WORKDIR_"*` gibi bir ifade, değişken tanımsız olduğunda `rm -rf *`'a genişler ve komutun çalıştığı dizini — yani proje kökünü — siler.
 
 ### 9. Operator'a tek tablo özeti
 ```

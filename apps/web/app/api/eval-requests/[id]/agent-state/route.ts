@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { requireToken } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,9 @@ export const dynamic = "force-dynamic";
 // Body: { agent: "analist", status: "running" | "done" | "failed", score?: number, note?: string }
 // Atomically merges into agent_states JSONB without overwriting other agents.
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const denied = requireToken(req);
+  if (denied) return denied;
+
   const { id } = await ctx.params;
   const body = await req.json().catch(() => null);
   if (!body || typeof body.agent !== "string" || typeof body.status !== "string") {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { authHeaders, authMessage } from "@/lib/client-token";
 
 type Status = "idle" | "queued" | "processing" | "done" | "failed";
 type AgentStatus = "pending" | "running" | "done" | "failed";
@@ -123,12 +124,12 @@ export function EvaluateButton({
     try {
       const r = await fetch("/api/eval-requests", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ teamId }),
       });
-      const data = await r.json();
+      const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setErrorMsg(data.error ?? `HTTP ${r.status}`);
+        setErrorMsg(authMessage(r.status) ?? data.error ?? `HTTP ${r.status}`);
         setStatus("failed");
         return;
       }
@@ -157,11 +158,15 @@ export function EvaluateButton({
     }
     if (!confirm("Değerlendirme iptal edilsin mi?")) return;
     try {
-      await fetch(`/api/eval-requests/${requestId}`, {
+      const res = await fetch(`/api/eval-requests/${requestId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ status: "failed", errorMsg: "İptal edildi" }),
       });
+      if (!res.ok) {
+        setErrorMsg(authMessage(res.status) ?? `İptal edilemedi: HTTP ${res.status}`);
+        return;
+      }
     } catch {
       /* ignore */
     }
@@ -256,7 +261,7 @@ export function EvaluateButton({
                     )}
                   </div>
                   <div className="mt-0.5 truncate text-[11px] opacity-70">
-                    {s === "done" && score != null ? `${score}/5 · ${a.desc}` : a.desc}
+                    {s === "done" && score != null ? `${score} puan · ${a.desc}` : a.desc}
                   </div>
                 </li>
               );

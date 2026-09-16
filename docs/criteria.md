@@ -1,16 +1,21 @@
 # Değerlendirme Kriterleri
 
-Toplam **100 puan**. Her kriter için AI gerekçesi (rationale) zorunludur.
+Toplam **100 puan**. Her kriter için gerekçe (rationale) zorunludur.
 
-| # | Kriter | Max Puan | Sub-agent | Bakılan İşaretler |
+> **Kaynak sütunu:** 5 kriter (`docs`, `readme`, `ai-evidence`, `agentic`, `tests`)
+> `scripts/eval-deterministic.mjs` ile **deterministik** hesaplanır — aynı repo her
+> zaman aynı puanı alır. Yalnız `clean-code` ve `architecture` LLM sub-agent'ı
+> tarafından puanlanır.
+
+| # | Kriter | Max Puan | Kaynak | Bakılan İşaretler |
 |---|--------|----------|-----------|-------------------|
-| 1 | AI ile kodlama kanıtı | 20 | `ai-evidence` | Commit'lerde co-author (`Co-Authored-By: Claude`), README'de AI tool listesi, `.claude/` klasörü, prompt arşivi/log'lar |
-| 2 | Agentic kodlama yapısı | 20 | `ai-evidence` | `.claude/agents/`, `.claude/skills/`, multi-step workflow, **MCP server kullanımı** (`mcp.json` / `.mcp.json` / `claude_desktop_config*`) — kullanılan MCP'ler rationale'a listelenir |
-| 3 | Docs (proje planı + aşamalar) | 14 | `analist` | `docs/` klasörü var mı; `plan.md`, `phases.md`, `architecture.md` benzeri dosyalar; içerik kalitesi |
-| 4 | README.md kapsamı | 14 | `analist` | Kullanılan MCP listesi, AI tool listesi, deploy URL, kurulum, test bölümü, görseller |
-| 5 | Temiz Kod | 14 | `developer` | İsimlendirme, dead code, fonksiyon uzunluğu, type safety, lint geçer mi, magic number, code smell |
-| 6 | Mimari | 14 | `reviewer` | Klasör ayrımı, separation of concerns, env yönetimi, hata yönetimi, framework best-practice uyumu |
-| 7 | Testler | 4 | `tester` | Backend unit test (Vitest/Jest/PyTest), frontend component test (RTL), E2E (Playwright/Cypress); varlık + çalışıyor mu + coverage işareti |
+| 1 | AI ile kodlama kanıtı | 20 | script | Commit'lerde co-author (`Co-Authored-By: Claude`), README'de AI tool listesi, `.claude/` klasörü, prompt arşivi/log'lar |
+| 2 | Agentic kodlama yapısı | 20 | script | `.claude/agents/`, `.claude/skills/`, multi-step workflow, **MCP server kullanımı** (`mcp.json` / `.mcp.json` / `claude_desktop_config*`) — kullanılan MCP'ler rationale'a listelenir |
+| 3 | Docs (proje planı + aşamalar) | 14 | script | `docs/` klasörü var mı; `plan.md`, `phases.md`, `architecture.md` benzeri dosyalar; içerik kalitesi |
+| 4 | README.md kapsamı | 14 | script | Kullanılan MCP listesi, AI tool listesi, deploy URL, kurulum, test bölümü, görseller |
+| 5 | Temiz Kod | 14 | developer LLM | İsimlendirme, dead code, fonksiyon uzunluğu, type safety, lint geçer mi, magic number, code smell |
+| 6 | Mimari | 14 | reviewer LLM | Klasör ayrımı, separation of concerns, env yönetimi, hata yönetimi, framework best-practice uyumu |
+| 7 | Testler | 4 | script | Backend unit test (Vitest/Jest/PyTest), frontend component test (RTL), E2E (Playwright/Cypress); varlık + çalışıyor mu + coverage işareti |
 
 ## Çıktı Sözleşmesi (her kriter için)
 

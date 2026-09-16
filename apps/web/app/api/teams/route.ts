@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { db, schema } from "@/lib/db";
+import { requireToken } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +12,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = requireToken(req);
+  if (denied) return denied;
+
   const body = await req.json().catch(() => null);
   if (!body || typeof body.name !== "string" || typeof body.repoUrl !== "string") {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });

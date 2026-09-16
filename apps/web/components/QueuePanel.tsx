@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { authHeaders, authMessage } from "@/lib/client-token";
 
 type Req = {
   id: string;
@@ -30,6 +31,7 @@ export function QueuePanel() {
   const [teams, setTeams] = useState<Map<string, Team>>(new Map());
   const [now, setNow] = useState<number>(() => Date.now());
   const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -66,11 +68,16 @@ export function QueuePanel() {
 
   async function cancel(reqId: string) {
     if (!confirm("Bu request iptal edilsin mi?")) return;
-    await fetch(`/api/eval-requests/${reqId}`, {
+    const res = await fetch(`/api/eval-requests/${reqId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ status: "failed", errorMsg: "Admin iptal etti" }),
     });
+    if (!res.ok) {
+      setErr(authMessage(res.status) ?? `İptal edilemedi: HTTP ${res.status}`);
+      return;
+    }
+    setErr(null);
     refresh();
   }
 
@@ -88,6 +95,9 @@ export function QueuePanel() {
         </div>
         <span className="text-xs text-slate-400">5 sn'de bir yenilenir</span>
       </div>
+      {err && (
+        <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700">{err}</div>
+      )}
       {reqs.length === 0 && loaded && (
         <div className="px-4 py-6 text-center text-sm text-slate-400">
           ✓ Kuyruk boş — tüm değerlendirmeler tamam.

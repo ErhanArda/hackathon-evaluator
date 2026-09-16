@@ -7,14 +7,14 @@ Sub-agent destekli, **API key gerektirmeyen** hackathon repo değerlendirme sist
 ```
 Operator (Claude Code lokal)
   └─ /evaluate <repo-url> team-id=<id>      (tek takım)
-  └─ /process-queue                          (kuyruktan batch=4, takım başına 5 agent)
+  └─ /process-queue                          (kuyruktan batch=4, takım başına 2 LLM agent)
        ├─ git clone
-       ├─ 5 sub-agent PARALEL (Agent tool, tek mesajda)
-       │    • analist     (Explore)         → docs + readme
-       │    • developer   (general-purpose) → temiz kod  [+ context7 MCP]
-       │    • reviewer    (general-purpose) → mimari     [+ context7 MCP]
-       │    • ai-evidence (Explore)         → AI/Agentic izler
-       │    • tester      (Explore)         → unit + RTL + E2E
+       ├─ scripts/eval-deterministic.mjs  → 5 kriter, deterministik (<1 sn)
+       │    • docs · readme · ai-evidence · agentic · tests
+       │    + prompt-injection taraması
+       ├─ 2 LLM sub-agent PARALEL (tek mesajda)
+       │    • developer (general-purpose) → temiz kod  [+ context7 MCP]
+       │    • reviewer  (general-purpose) → mimari     [+ context7 MCP]
        └─ POST → Vercel API
                    │
                    ▼
@@ -31,7 +31,7 @@ Detaylı mimari: [`docs/architecture.md`](docs/architecture.md)
 
 ## Kullanılan AI Tool'lar
 
-- **Claude Code** (Opus 4.7) — geliştirme + sub-agent orchestrator
+- **Claude Code** (Opus 5) — geliştirme + sub-agent orchestrator
 - Sub-agent tipleri: `Explore` (read-only), `general-purpose` (MCP'li)
 
 ## Kullanılan MCP Server'lar
@@ -44,7 +44,7 @@ Tanımlı: [`.mcp.json`](.mcp.json)
 
 ## Deploy
 
-- **Vercel:** _(deploy edildikten sonra URL eklenecek — örn. `https://hackathon-evaluator.vercel.app`)_
+- **Vercel:** https://hackathon-evaluator-eta.vercel.app
 - **DB:** Vercel Postgres (Neon) — ücretsiz tier
 - Sekai akışı: `git push origin main` → otomatik deploy + `pnpm db:push` (build script'i tetikler)
 
@@ -54,13 +54,13 @@ Detay: [`docs/criteria.md`](docs/criteria.md)
 
 | # | Kriter | Max | Sub-agent |
 |---|--------|-----|-----------|
-| 1 | AI ile kodlama kanıtı | 20 | ai-evidence |
-| 2 | Agentic kodlama yapısı | 20 | ai-evidence |
-| 3 | Docs (plan + aşamalar) | 14 | analist |
-| 4 | README.md kapsamı | 14 | analist |
-| 5 | Temiz Kod | 14 | developer + context7 |
-| 6 | Mimari | 14 | reviewer + context7 |
-| 7 | Testler (unit + RTL + E2E) | 4 | tester |
+| 1 | AI ile kodlama kanıtı | 20 | script (deterministik) |
+| 2 | Agentic kodlama yapısı | 20 | script (deterministik) |
+| 3 | Docs (plan + aşamalar) | 14 | script (deterministik) |
+| 4 | README.md kapsamı | 14 | script (deterministik) |
+| 5 | Temiz Kod | 14 | developer LLM + context7 |
+| 6 | Mimari | 14 | reviewer LLM + context7 |
+| 7 | Testler (unit + RTL + E2E) | 4 | script (deterministik) |
 
 Her kriter için sub-agent: `score`, `rationale` (≥2 cümle), `evidence` (dosya:satır) döner.
 
@@ -98,9 +98,9 @@ Claude Code'u repo kökünde aç, sonra iki kullanım var:
 ```
 /process-queue
 ```
-Pending eval-request'leri batch=4 paralel alır, her biri için 5 sub-agent → bir mesajda toplam 20 paralel Agent call. `/loop /process-queue` ile dakikada bir tetiklenip kuyruğu boşaltır.
+Pending eval-request'leri batch=4 paralel alır, her biri için deterministik script + 2 LLM sub-agent → bir mesajda toplam 8 paralel Agent call. `/loop /process-queue` ile dakikada bir tetiklenip kuyruğu boşaltır.
 
-Skill 5 sub-agent'ı **paralel** çalıştırır (~30-60 sn/takım), sonucu otomatik POST eder, dashboard satırı + per-agent rozet canlı güncellenir.
+Skill önce deterministik script'i çalıştırır (5 kriter, <1 sn), ardından 2 LLM sub-agent'ı **paralel** koşturur (~30-60 sn/takım), sonucu otomatik POST eder, dashboard satırı + per-agent rozet canlı güncellenir.
 
 `team-id` mevcut bir takıma karşılık gelmeli (aksi halde POST 4xx). `/admin`'den ekleyebilirsin.
 
@@ -118,7 +118,7 @@ End-to-end (Vercel'e deploy sonrası):
 1. `/admin` → token gir, "Takım 01" ekle (`t01`)
 2. Claude Code'da `/evaluate https://github.com/ErhanArda/sekai team-id=t01`
 3. `/` sayfasında satır 5 sn içinde puanlanır (örn. `78/100`)
-4. `/teams/t01` detayında 5 agent için canlı durum + her kriterin AI gerekçesi
+4. `/teams/t01` detayında agent durumları + her kriterin gerekçesi
 5. `/api/export.xlsx` → Excel iner
 
 ## Yapı
@@ -137,8 +137,10 @@ hackathon/
 │   └── skills/
 │       ├── evaluate/                      # /evaluate skill (tek takım)
 │       │   ├── SKILL.md
-│       │   └── agents/                    # 5 sub-agent prompt
-│       │       ├── analist.md
+│       │   └── agents/                    # sub-agent prompt'ları
+│       │       ├── developer.md            # clean-code (LLM)
+│       │       ├── reviewer.md             # architecture (LLM)
+│       │       ├── analist.md              # (kullanılmıyor — script devraldı)
 │       │       ├── developer.md
 │       │       ├── reviewer.md
 │       │       ├── ai-evidence.md
