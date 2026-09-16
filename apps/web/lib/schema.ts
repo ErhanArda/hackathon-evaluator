@@ -18,7 +18,8 @@ export const evaluations = pgTable("evaluations", {
   modelNote: text("model_note"),
   // {detected: bool, count: int, hits: [{path,line,excerpt,pattern}], note: string}
   securityScan: jsonb("security_scan"),
-  // Geç commit cezası ham puanı (örn. 5 → totalScore'dan düşülmüş)
+  // Geç teslim işareti (örn. 5). totalScore'dan DÜŞÜLMEZ — yalnızca UI'da
+  // kırmızı border/uyarı tetikler; bkz. api/evaluations/route.ts.
   latePenalty: integer("late_penalty").default(0),
   // {applied,points,cutoff,lateCommit:{hash,when}} — geç commit detayı
   latePenaltyDetail: jsonb("late_penalty_detail"),
