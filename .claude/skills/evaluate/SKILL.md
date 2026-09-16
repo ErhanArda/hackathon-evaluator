@@ -137,26 +137,25 @@ Kriterleri topla:
 
 Toplam 7 madde olmalı. Eksik kriter varsa, eksik olanı 0 puan + "agent yanıtı eksikti" rationale ile doldur.
 
-### 6. Toplam ve POST
+### 6. Toplam ve POST — SCRIPT İLE
 
-Toplam = 7 madde'nin score toplamı (max 100).
+Payload'ı elle yazma. Agent çıktılarını dosyaya yaz, birleştirmeyi script yapsın:
 
 ```bash
-curl -fsS -X POST "$EVALUATOR_API_BASE/api/evaluations" \
-  -H "Authorization: Bearer $INGEST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d @<(cat <<JSON
-{
-  "teamId": "<team-id>",
-  "evaluator": "claude-code",
-  "modelNote": "deterministik script (5 kriter) + 2 LLM agent (developer+reviewer) · context7 MCP[· ⚠ prompt-injection uyarısı varsa]",
-  "scores": [ ... 7 kriter ... ]
-}
-JSON
-)
+printf '%s' "$DEVELOPER_JSON" > "$WORKDIR/clean-code.json"
+printf '%s' "$REVIEWER_JSON"  > "$WORKDIR/architecture.json"
+
+node "$CLAUDE_PROJECT_DIR/scripts/finalize-evaluation.mjs" \
+  --base "$EVALUATOR_API_BASE" --team "<team-id>" \
+  --det "$WORKDIR/det.json" \
+  --llm "$WORKDIR/clean-code.json" --llm "$WORKDIR/architecture.json" \
+  --repo-path "$WORKDIR/repo"
 ```
 
-Pratik: scripts/post-evaluation.sh helper'ı var, Claude doğrudan onu çağırabilir.
+Script 7 kriteri birleştirir, skorları `0..max`'a çeker, eksik kriteri 0 ile
+doldurur, `securityScan` + `latePenalty`'yi ekler ve POST eder. `--dry-run`
+ile önce doğrulama tablosunu görebilirsin. `--req` vermezsen kuyruk
+güncellemesi atlanır (tek takım yolunda request yok).
 
 ### 7. Operator'a özet
 - `<takım> · <toplam>/100` tek satır

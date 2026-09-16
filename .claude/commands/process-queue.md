@@ -124,19 +124,40 @@ curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID/agent-state" \
 
 **KRİTİK:** 2-8 LLM Agent call TEK asistan mesajında — paralel.
 
-### 7. Aggregate + POST evaluation
-Her takım için 7 madde'yi topla (5 script + 2 LLM), ayrı POST:
+### 7. Sonuçları birleştir + POST et — SCRIPT İLE
+
+Payload JSON'unu **elle yazma.** Her agent'ın döndürdüğü JSON'u bir dosyaya
+yaz, sonra birleştirmeyi script'e bırak:
+
 ```bash
-curl -s -X POST "$BASE/api/evaluations" -d @payload_$i.json \
-  -H "Authorization: Bearer $INGEST_TOKEN"
+# agent çıktılarını olduğu gibi kaydet (kod fence'li olsa bile script ayıklar)
+printf '%s' "$DEVELOPER_JSON" > "$ROOT/$REQ_ID/clean-code.json"
+printf '%s' "$REVIEWER_JSON"  > "$ROOT/$REQ_ID/architecture.json"
+
+node "$CLAUDE_PROJECT_DIR/scripts/finalize-evaluation.mjs" \
+  --base "$BASE" --team "$TEAM_ID" --req "$REQ_ID" \
+  --det "$ROOT/$REQ_ID/det.json" \
+  --llm "$ROOT/$REQ_ID/clean-code.json" \
+  --llm "$ROOT/$REQ_ID/architecture.json" \
+  --repo-path "$ROOT/$REQ_ID/repo"
 ```
 
-### 8. Request'i done işaretle
-```bash
-curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
-  -H "Authorization: Bearer $INGEST_TOKEN" \
-  -d "{\"status\":\"done\",\"evaluationId\":\"$EVAL_ID\"}"
-```
+Script şunları yapar ve hepsini tek satırda raporlar:
+- 7 kriteri birleştirir, rubric sırasına dizer
+- skoru `0..max` aralığına çeker, mükerrer kriteri atar, eksik kriteri 0 +
+  "agent yanıtı eksikti" ile doldurur, boş rationale'ı işaretler
+- evidence path'lerini repo-göreli yapar (jüri ekranında `/tmp/...` görünmesin)
+- `securityScan` ve `latePenalty`'yi payload'a ekler (bunlar eskiden POST'a
+  hiç girmiyordu, o yüzden kırmızı border ve injection uyarısı görünmüyordu)
+- POST eder, `script`/`developer`/`reviewer` rozetlerini `done` yapar
+- request'i `expectFromStatus: "processing"` ile `done` işaretler — operatör
+  iptal ettiyse 409 alır ve **diriltmez**
+
+`--dry-run` ile POST etmeden yalnız doğrulama tablosunu görebilirsin.
+
+> Bu adım eskiden orchestrator'ın payload JSON'unu satır satır yazmasıyla
+> yapılıyordu: ölçümde takım başına ~3 dakika (toplam sürenin yarısı) ve
+> max'ı aşan skor / eksik kriter / bozuk JSON sessizce geçebiliyordu.
 
 ### 9. Workdir cleanup
 ```bash

@@ -106,8 +106,31 @@ Takım detay sayfasındaki kutu bu komutu hazır gösterir.
 ```
 /process-queue base=https://hackathon-evaluator-eta.vercel.app
 ```
-batch=4 paralel işler. `/loop /process-queue` ile dakikada bir tetikleyip
-kuyruğu boşaltabilirsin.
+batch=4 paralel işler.
+
+### Otomatik mod (sunum günü için önerilen)
+
+Takımlar repoyu sunuma başlarken veriyorsa, her seferinde terminale komut
+yazmak istemezsin. Ayrı bir terminalde bir kez başlat:
+
+```bash
+./scripts/watch-queue.sh
+```
+
+Kuyruğu 10 saniyede bir yoklar, bekleyen request görünce Claude Code'u
+headless modda çalıştırıp `/process-queue`'yu koşturur. Sen sadece `/admin`'den
+takımı ekleyip **Değerlendir**'e basıyorsun; skor 2-3 dakika içinde
+leaderboard'a düşüyor. Loglar `.watch-logs/` altında.
+
+```bash
+INTERVAL=5 ./scripts/watch-queue.sh    # daha sık yokla
+BASE=http://localhost:3000 ./scripts/watch-queue.sh
+```
+
+> Headless mod izin soramadığı için `--permission-mode bypassPermissions` ile
+> koşar. Değerlendirilen repo'nun kodu **çalıştırılmaz** — agent prompt'larındaki
+> komut politikası install/run/docker'ı yasaklıyor. Yine de yalnız güvendiğin
+> repoları kuyruğa al.
 
 ## 5) (Opsiyonel) Yazma korumasını aç
 
