@@ -6,21 +6,32 @@ Canlı: <https://hackathon-evaluator-eta.vercel.app>
 
 ---
 
-## ⏳ BEKLEYEN — geç teslim saati
+## Geç teslim saati — `EVAL_LATE_CUTOFF`
 
-`EVAL_LATE_CUTOFF` **henüz tanımlı değil**. Deadline belli olunca:
+> **Vercel env'ine YAZMA — orada işe yaramaz.** Değişkeni okuyan tek yer
+> `scripts/eval-deterministic.mjs` ve o script **lokalde** çalışıyor.
+> `apps/web/` altında bu değişkeni okuyan hiçbir kod yok; Vercel'e eklenirse
+> sessizce yok sayılır ve geç teslim kontrolü yapılmadan puanlama devam eder.
 
-Vercel → `hackathon-evaluator` → Settings → Environment Variables → Add
-(Production + Preview + Development):
+Doğru yer `apps/web/.env.local` — skill'lerin Adım 0'ı bu dosyayı zaten
+source ediyor, `.gitignore`'daki `.env*` ile de korunuyor:
 
-```
-EVAL_LATE_CUTOFF=2026-11-20T17:30:00+03:00
+```bash
+cat >> apps/web/.env.local <<'ENV'
+EVAL_LATE_CUTOFF=2026-09-16T17:30:00+03:00
+ENV
 ```
 
 > Tarih formatı ISO-8601 **+ timezone** olmalı. `+03:00` yazmazsan UTC sayılır
 > ve 3 saat kayar.
 
-Sonra Deployments → Redeploy.
+Doğrula — `cutoff` dolu görünmeli:
+
+```bash
+set -a; . apps/web/.env.local; set +a
+node scripts/eval-deterministic.mjs <bir-repo> | python3 -c \
+  "import json,sys; print(json.load(sys.stdin)['latePenalty'])"
+```
 
 **Tanımlı değilse ne olur:** geç commit cezası hiç uygulanmaz. Yani saati
 vermeden değerlendirme yaparsan yanlış ceza uygulanmaz, sadece kontrol atlanır.

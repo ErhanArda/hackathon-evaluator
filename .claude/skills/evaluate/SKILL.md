@@ -56,6 +56,43 @@ Terminalden tetikleme kurulum gerektirmez.
 - `team-id` zorunlu.
 - `base` belirtilmemişse `process.env.EVALUATOR_API_BASE`.
 
+### 1.5. Kuyruk kaydı oluştur — UI'da GÖRÜNMESİ İÇİN ZORUNLU
+
+Bu iki çağrı olmadan değerlendirme **hiçbir ekranda görünmez**: admin
+QueuePanel `?status=active` ile boş döner ("✓ Kuyruk boş" yazar), takım detay
+sayfasındaki EvaluateButton `?teamId=...&limit=1` ile pending/processing
+bulamaz ve script/developer/reviewer rozetleri hiç render edilmez. Skor sonra
+yine görünür (leaderboard, kriter dökümü, export) — görünmeyen şey **koşarken
+ilerleme**.
+
+Maliyet: 2 HTTP çağrısı, sıfır ek LLM token'ı.
+
+```bash
+AUTH=(); [ -n "$INGEST_TOKEN" ] && AUTH=(-H "Authorization: Bearer $INGEST_TOKEN")
+
+REQ_ID=$(curl -s -X POST "$EVALUATOR_API_BASE/api/eval-requests" \
+  -H "Content-Type: application/json" "${AUTH[@]}" \
+  -d "{\"teamId\":\"<team-id>\"}" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["request"]["id"])')
+echo "REQ_ID=$REQ_ID"
+```
+
+- Aynı takımda zaten `pending` kayıt varsa 200 + `deduplicated:true` döner ve
+  **aynı id** gelir — status koduna güvenme, her iki durumda da `.request.id` al.
+- 404 `team not found` → operatöre "team-id veritabanında yok, /admin'den ekle"
+  de ve abort et.
+
+Ardından atomik claim (sunucu `startedAt`'ı kendi yazar — elle yazılamaz):
+
+```bash
+curl -s -X PATCH "$EVALUATOR_API_BASE/api/eval-requests/$REQ_ID" \
+  -H "Content-Type: application/json" "${AUTH[@]}" \
+  -d '{"status":"processing","expectFromStatus":"pending"}'
+```
+
+409 dönerse kaydı başkası kapmış ya da operatör iptal etmiş → **akışı durdur**,
+diriltme.
+
 ### 2. Repo'yu klonla
 ```bash
 WORKDIR=$(mktemp -d -t eval-XXXXXX)
@@ -78,7 +115,19 @@ Bu özet bilgileri sub-agent'lara context olarak verirsin.
 ### 4a. Deterministik skorlar (script)
 
 ```bash
-node "$CLAUDE_PROJECT_DIR/scripts/eval-deterministic.mjs" "$WORKDIR/repo"
+# > YÖNLENDİRMESİ ZORUNLU: Adım 6 --det "$WORKDIR/det.json" okuyor.
+# Yönlendirmeyi unutursan finalize ENOENT ile patlar.
+node "$CLAUDE_PROJECT_DIR/scripts/eval-deterministic.mjs" "$WORKDIR/repo" > "$WORKDIR/det.json"
+```
+
+Script rozetini hemen yeşillendir (opsiyonel ama kullanıcı 2-5 dk boş rozete
+bakmasın):
+
+```bash
+DET_TOTAL=$(python3 -c "import json;print(sum(x['score'] for x in json.load(open('$WORKDIR/det.json'))['scores']))")
+curl -s -X PATCH "$EVALUATOR_API_BASE/api/eval-requests/$REQ_ID/agent-state" \
+  -H "Content-Type: application/json" "${AUTH[@]}" \
+  -d "{\"agent\":\"script\",\"status\":\"done\",\"score\":$DET_TOTAL}"
 ```
 
 > Yol **repoya göre** çözülür. Mutlak yol yazma: bu makinede `~/Desktop/hackathon` adında bu projenin eski bir klonu daha var; mutlak yol sessizce onu çalıştırır ve sen düzeltmelerinin neden etkisiz kaldığını anlamazsın. `$CLAUDE_PROJECT_DIR` yoksa `git rev-parse --show-toplevel` kullan.
@@ -87,7 +136,7 @@ node "$CLAUDE_PROJECT_DIR/scripts/eval-deterministic.mjs" "$WORKDIR/repo"
 { "scores": [docs, readme, ai-evidence, agentic, tests], "securityScan": {detected, count, hits, note} }
 ```
 
-Bu 5 skor doğrudan kullanılır. Process-queue içindeysen 5 agent-state'i (analist/developer/reviewer/ai-evidence/tester ≠ kriterlerle eşleşmez ama) bu noktada "done" işaretle, score field'larına deterministik puanı yaz. UI rozetleri anında yeşillenir.
+Bu 5 skor doğrudan kullanılır. UI yalnızca **`script` / `developer` / `reviewer`** anahtarlarını çiziyor (`EvaluateButton.tsx:15-19`); başka anahtar DB'ye yazılır ama hiçbir rozete karşılık gelmez.
 
 > **NOT:** Eski 5-agent mapping (analist→docs+readme; ai-evidence→ai-evidence+agentic; tester→tests) **tamamen kaldırıldı**. analist/ai-evidence/tester agent'ları artık çağrılmaz.
 
@@ -107,7 +156,20 @@ subagent_type: "general-purpose"
 prompt: <oku ./agents/reviewer.md, repo-path ve top-deps doldur>
 ```
 
-> **KRİTİK:** İki Agent çağrısı tek bir asistan mesajında olmalı. developer/reviewer agent-state'leri sırasıyla running→done PATCH'lenir.
+İki Agent çağrısını içeren mesajdan **HEMEN ÖNCE** rozetleri amber'a çevir
+(bu PATCH'leri agent prompt'una KOYMA — orchestrator atar):
+
+```bash
+for a in developer reviewer; do
+  curl -s -X PATCH "$EVALUATOR_API_BASE/api/eval-requests/$REQ_ID/agent-state" \
+    -H "Content-Type: application/json" "${AUTH[@]}" \
+    -d "{\"agent\":\"$a\",\"status\":\"running\"}"
+done
+```
+
+`done` PATCH'lerini elle atma — Adım 6'daki `--req` bunu zaten yapıyor.
+
+> **KRİTİK:** İki Agent çağrısı tek bir asistan mesajında olmalı.
 
 ### 4c. Prompt injection uyarısı
 `securityScan.detected === true` ise:
@@ -146,7 +208,7 @@ printf '%s' "$DEVELOPER_JSON" > "$WORKDIR/clean-code.json"
 printf '%s' "$REVIEWER_JSON"  > "$WORKDIR/architecture.json"
 
 node "$CLAUDE_PROJECT_DIR/scripts/finalize-evaluation.mjs" \
-  --base "$EVALUATOR_API_BASE" --team "<team-id>" \
+  --base "$EVALUATOR_API_BASE" --team "<team-id>" --req "$REQ_ID" \
   --det "$WORKDIR/det.json" \
   --llm "$WORKDIR/clean-code.json" --llm "$WORKDIR/architecture.json" \
   --repo-path "$WORKDIR/repo"
@@ -154,8 +216,14 @@ node "$CLAUDE_PROJECT_DIR/scripts/finalize-evaluation.mjs" \
 
 Script 7 kriteri birleştirir, skorları `0..max`'a çeker, eksik kriteri 0 ile
 doldurur, `securityScan` + `latePenalty`'yi ekler ve POST eder. `--dry-run`
-ile önce doğrulama tablosunu görebilirsin. `--req` vermezsen kuyruk
-güncellemesi atlanır (tek takım yolunda request yok).
+ile önce doğrulama tablosunu görebilirsin.
+
+`--req` verildiği anda script (finalize-evaluation.mjs:170-194) fazladan şunları
+yapar: 3 paralel agent-state PATCH'i (script/developer/reviewer = done + skor) ve
+`{status:"done", evaluationId, expectFromStatus:"processing"}` compare-and-swap.
+Bu son PATCH kuyruk satırını kapatır, UI'da `router.refresh()` tetikler ve skorlar
+belirir. **`--req` vermezsen bu 4 çağrı atlanır ve kayıt sonsuza kadar
+"processing" kalır.**
 
 ### 7. Operator'a özet
 - `<takım> · <toplam>/100` tek satır
@@ -168,6 +236,18 @@ rm -rf "$WORKDIR"
 ```
 
 ## Hata Yolu
+
+> **Her hata yolunda önce kuyruk kaydını kapat** — yoksa satır sonsuza kadar
+> "🔄 İşleniyor" görünür ve QueuePanel hiç boşalmaz:
+>
+> ```bash
+> curl -s -X PATCH "$EVALUATOR_API_BASE/api/eval-requests/$REQ_ID" \
+>   -H "Content-Type: application/json" "${AUTH[@]}" \
+>   -d "{\"status\":\"failed\",\"errorMsg\":\"<sebep>\"}"
+> ```
+>
+> Takım detay sayfası `errorMsg`'i "Hata: ..." kutusunda gösterir.
+
 
 - **Repo private / 404** → POST 7 madde × 0 puan, rationale "Repo erişilemedi (private veya yok). Skor için public + master branch çalışan repo gerekir."
 - **Sub-agent JSON bozuk** → 1 kez retry, hâlâ bozuksa o kriter için 0 puan + "AI cevabı parse edilemedi" rationale
