@@ -7,7 +7,6 @@ import type { LeaderRow } from "@/lib/queries";
 import { CRITERIA } from "@/lib/criteria";
 import { ScoreBadge } from "./ScoreBadge";
 import { normalize100, rankColor } from "@/lib/scoring";
-import { authHeaders, authMessage } from "@/lib/client-token";
 
 export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
   const router = useRouter();
@@ -51,11 +50,11 @@ export function LeaderboardTable({ rows: initial }: { rows: LeaderRow[] }) {
     try {
       const res = await fetch("/api/teams/order", {
         method: "POST",
-        headers: authHeaders(),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ order: orderIds }),
       });
       if (!res.ok) {
-        setOrderErr(authMessage(res.status) ?? `Sıra kaydedilemedi: HTTP ${res.status}`);
+        setOrderErr(`Sıra kaydedilemedi: HTTP ${res.status}`);
         setOverride(null); // optimistic sırayı geri al, sunucudaki gerçeği göster
         return;
       }

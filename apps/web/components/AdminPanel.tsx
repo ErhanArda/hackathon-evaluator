@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { authHeaders, authMessage, getToken, setToken } from "@/lib/client-token";
 
 type Team = {
   id: string;
@@ -19,25 +18,6 @@ export function AdminPanel({ initialTeams }: { initialTeams: Team[] }) {
   const [members, setMembers] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-
-  // Operatör token'ı — yazma isteklerinde Authorization başlığı olarak gider.
-  // Sadece bu tarayıcıda saklanır. localStorage sunucuda yok, o yüzden
-  // useSyncExternalStore ile okunur: sunucu anlık görüntüsü boş string.
-  const stored = useSyncExternalStore(
-    () => () => {},
-    () => getToken(),
-    () => ""
-  );
-  const [draft, setDraft] = useState<string | null>(null);
-  const token = draft ?? stored;
-  const [tokenSaved, setTokenSaved] = useState(false);
-
-  function saveToken() {
-    setToken(token);
-    setDraft(null);
-    setTokenSaved(true);
-    setTimeout(() => setTokenSaved(false), 2000);
-  }
 
   // edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -62,7 +42,7 @@ export function AdminPanel({ initialTeams }: { initialTeams: Team[] }) {
     setEditBusy(true);
     const res = await fetch("/api/teams", {
       method: "POST",
-      headers: authHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         id,
         name: editName.trim(),
@@ -73,7 +53,7 @@ export function AdminPanel({ initialTeams }: { initialTeams: Team[] }) {
     setEditBusy(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setMsg(authMessage(res.status) ?? `Hata: ${data.error ?? res.status}`);
+      setMsg(`Hata: ${data.error ?? res.status}`);
       return;
     }
     const data = await res.json();
@@ -93,7 +73,7 @@ export function AdminPanel({ initialTeams }: { initialTeams: Team[] }) {
     setMsg(null);
     const res = await fetch("/api/teams", {
       method: "POST",
-      headers: authHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: name.trim(),
         repoUrl: repoUrl.trim(),
@@ -103,7 +83,7 @@ export function AdminPanel({ initialTeams }: { initialTeams: Team[] }) {
     setBusy(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setMsg(authMessage(res.status) ?? `Hata: ${data.error ?? res.status}`);
+      setMsg(`Hata: ${data.error ?? res.status}`);
       return;
     }
     const data = await res.json();
@@ -117,12 +97,9 @@ export function AdminPanel({ initialTeams }: { initialTeams: Team[] }) {
 
   async function deleteTeam(id: string) {
     if (!confirm("Silinsin mi?")) return;
-    const res = await fetch(`/api/teams/${id}`, {
-      method: "DELETE",
-      headers: authHeaders(false),
-    });
+    const res = await fetch(`/api/teams/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      setMsg(authMessage(res.status) ?? `Silinemedi: HTTP ${res.status}`);
+      setMsg(`Silinemedi: HTTP ${res.status}`);
       return;
     }
     setTeams(teams.filter((t) => t.id !== id));
@@ -132,37 +109,6 @@ export function AdminPanel({ initialTeams }: { initialTeams: Team[] }) {
 
   return (
     <div className="space-y-6">
-      {/* OPERATOR TOKEN — yazma islemleri icin zorunlu */}
-      <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4">
-        <label htmlFor="ingest-token" className="block text-base font-semibold">
-          Operatör Token
-        </label>
-        <p className="text-xs text-slate-600">
-          Takım ekleme/silme, sıralama ve değerlendirme tetikleme bu token&apos;ı gerektirir.
-          Sunucudaki <code className="font-mono">INGEST_TOKEN</code> ile aynı olmalı. Yalnızca bu
-          tarayıcıda saklanır.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            id="ingest-token"
-            type="password"
-            value={token}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="INGEST_TOKEN"
-            autoComplete="off"
-            className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 font-mono text-sm"
-          />
-          <button
-            type="button"
-            onClick={saveToken}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white"
-          >
-            Kaydet
-          </button>
-          {tokenSaved && <span className="text-xs text-emerald-700">kaydedildi</span>}
-        </div>
-      </div>
-
       {/* ADD form (sadece yeni takım) */}
       <form onSubmit={addTeam} className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold">Takım Ekle</h2>

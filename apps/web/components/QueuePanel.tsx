@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { authHeaders, authMessage } from "@/lib/client-token";
 
 type Req = {
   id: string;
@@ -70,11 +69,11 @@ export function QueuePanel() {
     if (!confirm("Bu request iptal edilsin mi?")) return;
     const res = await fetch(`/api/eval-requests/${reqId}`, {
       method: "PATCH",
-      headers: authHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "failed", errorMsg: "Admin iptal etti" }),
     });
     if (!res.ok) {
-      setErr(authMessage(res.status) ?? `İptal edilemedi: HTTP ${res.status}`);
+      setErr(`İptal edilemedi: HTTP ${res.status}`);
       return;
     }
     setErr(null);

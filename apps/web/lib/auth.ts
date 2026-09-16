@@ -9,19 +9,31 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Yazma yapan her route handler'ının ilk satırı.
- * Dönen değer null ise istek yetkili; NextResponse ise handler onu döndürmeli.
+ * Yazma yapan route handler'larının ilk satırı.
+ * null dönerse istek geçer; NextResponse dönerse handler onu döndürmeli.
  *
- * Fail-closed: INGEST_TOKEN tanımlı değilse hiçbir yazma kabul edilmez.
- * Aksi halde env'i unutmak, endpoint'i sessizce herkese açık bırakırdı.
+ * VARSAYILAN: KAPALI — yazma endpoint'leri açıktır, hiçbir token gerekmez.
+ * Bu, güvenilir bir iç ortamda (tek operatör, kurum ağı) kasıtlı tercihtir;
+ * terminalden `/evaluate` ve `/process-queue` hiçbir kurulum olmadan çalışır.
+ *
+ * KORUMAYI AÇMAK: Vercel'de `EVALUATOR_REQUIRE_AUTH=1` ve `INGEST_TOKEN=<sır>`
+ * tanımla. O anda tüm yazma endpoint'leri `Authorization: Bearer <INGEST_TOKEN>`
+ * ister; okuma endpoint'leri her iki durumda da public kalır.
+ *
+ * Anahtar `INGEST_TOKEN`'ın kendisi DEĞİL, ayrı bir flag: token zaten
+ * ortamda tanımlı olabilir (post-evaluation.sh onu gönderiyor) ve yalnız
+ * varlığı yüzünden kimsenin kilitlenmemesi gerekir.
  */
 export function requireToken(req: NextRequest): NextResponse | null {
+  const enabled = /^(1|true|yes|on)$/i.test(process.env.EVALUATOR_REQUIRE_AUTH ?? "");
+  if (!enabled) return null;
+
   const expected = process.env.INGEST_TOKEN;
   if (!expected) {
     return NextResponse.json(
       {
         error:
-          "INGEST_TOKEN sunucuda tanımlı değil — yazma endpoint'leri kapalı. Vercel > Settings > Environment Variables'a ekleyip yeniden deploy et.",
+          "EVALUATOR_REQUIRE_AUTH açık ama INGEST_TOKEN tanımlı değil — yazma endpoint'leri kapalı. Token'ı ekle ya da flag'i kaldır.",
       },
       { status: 503 }
     );

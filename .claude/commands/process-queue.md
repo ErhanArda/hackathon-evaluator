@@ -7,23 +7,24 @@ Bekleyen `eval_requests`'i kuyruktan al, **batch=4 paralel**, her biri için 5 k
 - `batch` — varsayılan 4
 
 
-## Adım 0 — Token'ı bir kez yükle (ZORUNLU)
+## Adım 0 — Ortamı yükle
 
-Yazma yapan endpoint'ler `Authorization: Bearer $INGEST_TOKEN` ister. Token'ı her
-komutta elle girmene gerek yok; akışın başında **bir kez** yükle:
+`EVALUATOR_API_BASE`'i (ve varsa `INGEST_TOKEN`'ı) akışın başında bir kez yükle:
 
 ```bash
 # .env.local varsa oradan, yoksa shell ortamından
 set -a
 [ -f "$CLAUDE_PROJECT_DIR/apps/web/.env.local" ] && . "$CLAUDE_PROJECT_DIR/apps/web/.env.local"
 set +a
-: "${INGEST_TOKEN:?INGEST_TOKEN yok — apps/web/.env.local'a ekle ya da export et}"
 : "${EVALUATOR_API_BASE:=https://hackathon-evaluator-eta.vercel.app}"
 ```
 
-Bundan sonra terminalden tetikleme eskisi gibi çalışır — tüm curl'ler bu
-değişkeni kullanır. Token yanlışsa endpoint 401, sunucuda hiç tanımlı değilse
-503 döner; mesaj ne yapacağını söyler.
+`INGEST_TOKEN` **opsiyonel**. Sunucuda `EVALUATOR_REQUIRE_AUTH` kapalı olduğu
+sürece yazma endpoint'leri token istemez; curl'lerdeki Authorization başlığı boş
+gider ve yok sayılır. Korumayı açarsan (`EVALUATOR_REQUIRE_AUTH=1`) yalnız bu
+değişkeni tanımlaman yeterli — akış aynı kalır.
+
+Terminalden tetikleme kurulum gerektirmez.
 
 ## Akış
 
@@ -44,13 +45,12 @@ curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
 ```
 409 → başkası kapmış, atla.
 
-### 3. agent_states'i 5 'pending' ile initialize
-Her claimed request için 5 rozet satırı açılır. `analist`/`ai-evidence`/`tester` rozetleri
-deterministik script bittiğinde orchestrator tarafından `done` işaretlenir (bu isimler
-kriterlerle birebir eşleşmez, yalnız UI rozet etiketidir); `developer`/`reviewer` ise
-LLM agent'ları için:
+### 3. agent_states'i 3 'pending' ile initialize
+Her claimed request için 3 rozet satırı açılır — UI'daki rozetlerle birebir aynı
+anahtarlar: `script` (deterministik 5 kriter), `developer` (clean-code),
+`reviewer` (architecture):
 ```bash
-for agent in analist developer reviewer ai-evidence tester; do
+for agent in script developer reviewer; do
   curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID/agent-state" \
     -H "Authorization: Bearer $INGEST_TOKEN" \
     -H "Content-Type: application/json" \
@@ -85,7 +85,7 @@ node "$CLAUDE_PROJECT_DIR/scripts/eval-deterministic.mjs" "$ROOT/$REQ_ID/repo" >
 ```
 
 > Yol **repoya göre**. Mutlak yol yazma: makinede `~/Desktop/hackathon` adında bu projenin eski bir klonu var ve mutlak yol sessizce onu çalıştırır.
-Bekle, parse et. 5 kriter (docs, readme, ai-evidence, agentic, tests) anında elde. analist/ai-evidence/tester agent-state'lerini "done" + ilgili skor ile PATCH et (UI canlı yeşillenir).
+Bekle, parse et. 5 kriter (docs, readme, ai-evidence, agentic, tests) anında elde. `script` agent-state'ini "done" + deterministik toplam ile PATCH et (UI canlı yeşillenir).
 
 `securityScan.detected` ise modelNote'a uyarı ekle.
 

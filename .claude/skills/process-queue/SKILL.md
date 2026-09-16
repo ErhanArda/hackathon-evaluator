@@ -16,23 +16,24 @@ Bir batch'te toplam **2N paralel LLM çağrısı** (N=batch). Aynı repo için s
 - `batch` (opsiyonel) — varsayılan 4. Max paralel request sayısı.
 
 
-## Adım 0 — Token'ı bir kez yükle (ZORUNLU)
+## Adım 0 — Ortamı yükle
 
-Yazma yapan endpoint'ler `Authorization: Bearer $INGEST_TOKEN` ister. Token'ı her
-komutta elle girmene gerek yok; akışın başında **bir kez** yükle:
+`EVALUATOR_API_BASE`'i (ve varsa `INGEST_TOKEN`'ı) akışın başında bir kez yükle:
 
 ```bash
 # .env.local varsa oradan, yoksa shell ortamından
 set -a
 [ -f "$CLAUDE_PROJECT_DIR/apps/web/.env.local" ] && . "$CLAUDE_PROJECT_DIR/apps/web/.env.local"
 set +a
-: "${INGEST_TOKEN:?INGEST_TOKEN yok — apps/web/.env.local'a ekle ya da export et}"
 : "${EVALUATOR_API_BASE:=https://hackathon-evaluator-eta.vercel.app}"
 ```
 
-Bundan sonra terminalden tetikleme eskisi gibi çalışır — tüm curl'ler bu
-değişkeni kullanır. Token yanlışsa endpoint 401, sunucuda hiç tanımlı değilse
-503 döner; mesaj ne yapacağını söyler.
+`INGEST_TOKEN` **opsiyonel**. Sunucuda `EVALUATOR_REQUIRE_AUTH` kapalı olduğu
+sürece yazma endpoint'leri token istemez; curl'lerdeki Authorization başlığı boş
+gider ve yok sayılır. Korumayı açarsan (`EVALUATOR_REQUIRE_AUTH=1`) yalnız bu
+değişkeni tanımlaman yeterli — akış aynı kalır.
+
+Terminalden tetikleme kurulum gerektirmez.
 
 ## Algoritma
 
@@ -90,7 +91,7 @@ node "$CLAUDE_PROJECT_DIR/scripts/eval-deterministic.mjs" "$ROOT/$REQ_ID/repo" >
 ```
 
 > Yol **repoya göre** çözülür. Mutlak yol yazma: bu makinede `~/Desktop/hackathon` adında bu projenin eski bir klonu daha var ve mutlak yol sessizce onu çalıştırır. `$CLAUDE_PROJECT_DIR` set değilse `git rev-parse --show-toplevel` kullan.
-Wait, parse. 5 kriter (docs, readme, ai-evidence, agentic, tests) anında hazır. UI rozetlerini PATCH'le (analist/ai-evidence/tester agent-state'leri = done, score = ilgili kriter skoru).
+Wait, parse. 5 kriter (docs, readme, ai-evidence, agentic, tests) anında hazır. UI rozetini PATCH'le (`script` agent-state'i = done, score = deterministik toplam).
 
 `securityScan.detected === true` ise modelNote'a "⚠ prompt-injection N hit" ekle.
 

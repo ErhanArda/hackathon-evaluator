@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { authHeaders, authMessage } from "@/lib/client-token";
 
 type Status = "idle" | "queued" | "processing" | "done" | "failed";
 type AgentStatus = "pending" | "running" | "done" | "failed";
@@ -11,12 +10,12 @@ type AgentStateMap = Record<
   { status?: AgentStatus; startedAt?: string; completedAt?: string; score?: number; note?: string } | undefined
 >;
 
+// Puanın gerçek kaynakları. Eski liste silinmiş analist/ai-evidence/tester
+// agent'larını gösteriyordu; onların yerini deterministik script aldı.
 const AGENTS = [
-  { key: "analist",     label: "Analist",      desc: "docs + readme"        },
-  { key: "developer",   label: "Developer",    desc: "temiz kod (context7)" },
-  { key: "reviewer",    label: "Reviewer",     desc: "mimari (context7)"    },
-  { key: "ai-evidence", label: "AI Evidence",  desc: "agentic + AI izleri"  },
-  { key: "tester",      label: "Tester",       desc: "unit + RTL + E2E"     },
+  { key: "script",    label: "Script",    desc: "docs · readme · AI · agentic · test" },
+  { key: "developer", label: "Developer", desc: "temiz kod (context7)"                },
+  { key: "reviewer",  label: "Reviewer",  desc: "mimari (context7)"                   },
 ] as const;
 
 function formatElapsed(ms: number): string {
@@ -124,12 +123,12 @@ export function EvaluateButton({
     try {
       const r = await fetch("/api/eval-requests", {
         method: "POST",
-        headers: authHeaders(),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teamId }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setErrorMsg(authMessage(r.status) ?? data.error ?? `HTTP ${r.status}`);
+        setErrorMsg(data.error ?? `HTTP ${r.status}`);
         setStatus("failed");
         return;
       }
@@ -160,11 +159,11 @@ export function EvaluateButton({
     try {
       const res = await fetch(`/api/eval-requests/${requestId}`, {
         method: "PATCH",
-        headers: authHeaders(),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "failed", errorMsg: "İptal edildi" }),
       });
       if (!res.ok) {
-        setErrorMsg(authMessage(res.status) ?? `İptal edilemedi: HTTP ${res.status}`);
+        setErrorMsg(`İptal edilemedi: HTTP ${res.status}`);
         return;
       }
     } catch {
@@ -197,8 +196,11 @@ export function EvaluateButton({
             {hasEvaluation ? "Yeniden değerlendir" : "Değerlendir"}
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            4 sub-agent paralel çalışır. <strong>Küçük repo: 30-90 sn · Büyük repo: 2-5 dk.</strong> Süre, repo
-            boyutuna göre değişir (analist/developer dosyaları gerçekten okur).
+            Deterministik script (5 kriter, ~1 sn) + 2 paralel LLM agent.
+            <strong>Küçük repo: 30-90 sn · Büyük repo: 2-5 dk.</strong>{" "}
+            Butona basmak işi <em>kuyruğa alır</em> — çalıştıran, Claude Code&apos;daki
+            <code className="mx-1 rounded bg-slate-100 px-1 font-mono">/process-queue</code>
+            komutudur.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -225,8 +227,8 @@ export function EvaluateButton({
           <div className="flex items-baseline justify-between text-xs text-slate-600">
             <span>
               {status === "queued"
-                ? "⏳ Worker bekleniyor (cron her dakika)"
-                : "🔄 Sub-agent'lar koşuyor — paralel"}
+                ? "⏳ Kuyrukta — Claude Code'da /process-queue çalıştır"
+                : "🔄 Değerlendirme koşuyor"}
             </span>
             <span className="font-mono text-slate-500">
               elapsed: {formatElapsed(elapsed)}
@@ -269,7 +271,7 @@ export function EvaluateButton({
           </ul>
 
           <p className="text-[11px] text-slate-400">
-            * Her sub-agent başlarken/biterken bağımsız DB'ye yazar; canlı tikler.
+            * Durumlar orchestrator tarafından yazılır; rozetler canlı güncellenir.
           </p>
         </div>
       )}
@@ -280,9 +282,9 @@ export function EvaluateButton({
         </div>
       )}
 
-      <details className="mt-3 text-xs">
-        <summary className="cursor-pointer text-slate-500 hover:text-slate-700">
-          Worker yoksa: komutu manuel kopyala
+      <details className="mt-3 text-xs" open>
+        <summary className="cursor-pointer font-medium text-slate-600 hover:text-slate-800">
+          Bu komutu Claude Code&apos;a yapıştır (tek takım)
         </summary>
         <div className="mt-2 flex items-center gap-2">
           <pre className="flex-1 overflow-x-auto rounded bg-slate-100 p-2 font-mono text-xs text-slate-800">
