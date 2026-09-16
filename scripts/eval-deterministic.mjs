@@ -351,7 +351,11 @@ function scoreReadme() {
 
   // Başlık + placeholder farkındalığı: `*[örn. Claude Code]*` bir beyan
   // değildir, `## MCP Sunucu Listesi` başlığı da tek başına yeterli değildir.
-  const AI_TOOL_RE = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|windsurf|codeium|ai tools? used|ai-?assist)/i;
+  // Batı dışı modeller ve yeni nesil ajan araçları da beyan sayılır. Eski liste
+// yalnız Claude/Cursor/Copilot ailesini tanıyordu: GLM-5.3 + ZCode beyan eden
+// takım (Achillies) kusursuz doldurulmuş tabloya rağmen "AI tool listesi=✗"
+// alıp readme + ai-evidence'tan 6 puan kaybediyordu.
+  const AI_TOOL_RE = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|windsurf|codeium|deepseek|qwen|glm-?\d|zcode|kimi|moonshot|minimax|doubao|ernie|llama|mistral|mixtral|grok|gemma|trae|cline|roo\s*code|kilo\s*code|replit|bolt\.new|lovable|ollama|lm\s*studio|perplexity|ai tools? used|ai-?assist)/i;
   const MCP_RE = /\bmcp\b|model context protocol/i;
   const MCP_CONFIG_FILES = [
     ".mcp.json", "mcp.json", "claude_desktop_config.json", ".cursor/mcp.json",
@@ -442,7 +446,7 @@ function scoreAiEvidence() {
   const aiConfigFound = aiConfigCandidates.filter((p) => exists(p));
   evidence.push({ path: "AI config", lines: null, note: aiConfigFound.length > 0 ? `bulunan: ${aiConfigFound.join(", ")}` : "yok" });
 
-  const aiToolRe = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|continue\.dev|windsurf|codeium|devin|tabnine|jetbrains\s*ai|zed\s*ai|ai\s+tools?\s+used|ai-?assist)/i;
+  const aiToolRe = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|continue\.dev|windsurf|codeium|devin|tabnine|jetbrains\s*ai|zed\s*ai|deepseek|qwen|glm-?\d|zcode|kimi|moonshot|minimax|doubao|ernie|llama|mistral|mixtral|grok|gemma|trae|cline|roo\s*code|kilo\s*code|replit|bolt\.new|lovable|ollama|lm\s*studio|perplexity|ai\s+tools?\s+used|ai-?assist)/i;
   // Placeholder farkındalığı: `*[örn. Claude Code]*` beyan sayılmaz.
   const aiToolInReadme = aiToolRe.test(declaredText(readme));
   const docDir = ["docs", "doc", "documentation"].find((d) => exists(d));
