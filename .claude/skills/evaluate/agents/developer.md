@@ -35,6 +35,24 @@ Aşağıdaki "5-10 dosya" / "3-5 fonksiyon" ifadeleri **tavan**dır, hedef deği
   Değerlendirilen repo'nun kodunu **asla çalıştırma** — arbitrary postinstall
   script'i tetikler. Lint/test sonucunu tahmin etme, statik okumaya dayan.
 
+## Ön-hesaplanmış kanıt
+
+Aşağıdaki veriler `scripts/repo-digest.mjs` ile deterministik olarak ölçüldü.
+**Bunları yeniden toplamak için tool call harcama** — envanter, fonksiyon
+uzunlukları, `any`/`catch` sayıları, lint konfigürasyonu, en çok değişen
+dosyalar ve git istatistikleri zaten aşağıda.
+
+Tool call bütçeni doğrudan **yargıya** harca: sayılar iyi mi kötü mü, kod
+okuyunca sayıların anlatmadığı ne var. Digest'in bilerek ölçmediği şeyler:
+isimlendirme kalitesi, separation of concerns, framework pattern uyumu — bunlar
+için dosya okuman gerekiyor.
+
+> Digest'in bilinen sınırı: fonksiyon uzunluğu tespiti brace sayımına dayanıyor
+> ve sınıf/nesne içindeki metotları kaçırabiliyor. Listede görünmeyen uzun bir
+> fonksiyona rastlarsan onu da rapor et.
+
+{DIGEST}
+
 ## Repo
 - Path: `{REPO_PATH}`
 - Üst bağımlılıklar: `{TOP_DEPS}` (context7 ile bunların docs'unu çekersen daha iyi değerlendirme yaparsın)
