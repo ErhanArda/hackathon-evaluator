@@ -29,6 +29,25 @@ Operator çağrısı:
 - `EVALUATOR_API_BASE` — örn. `https://hackathon-evaluator.vercel.app`
 - `INGEST_TOKEN` — Bearer token (lokal `.env` veya shell env)
 
+
+## Adım 0 — Token'ı bir kez yükle (ZORUNLU)
+
+Yazma yapan endpoint'ler `Authorization: Bearer $INGEST_TOKEN` ister. Token'ı her
+komutta elle girmene gerek yok; akışın başında **bir kez** yükle:
+
+```bash
+# .env.local varsa oradan, yoksa shell ortamından
+set -a
+[ -f "$CLAUDE_PROJECT_DIR/apps/web/.env.local" ] && . "$CLAUDE_PROJECT_DIR/apps/web/.env.local"
+set +a
+: "${INGEST_TOKEN:?INGEST_TOKEN yok — apps/web/.env.local'a ekle ya da export et}"
+: "${EVALUATOR_API_BASE:=https://hackathon-evaluator-eta.vercel.app}"
+```
+
+Bundan sonra terminalden tetikleme eskisi gibi çalışır — tüm curl'ler bu
+değişkeni kullanır. Token yanlışsa endpoint 401, sunucuda hiç tanımlı değilse
+503 döner; mesaj ne yapacağını söyler.
+
 ## Adımlar
 
 ### 1. Argümanları parse et

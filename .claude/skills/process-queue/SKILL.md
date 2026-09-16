@@ -15,6 +15,25 @@ Bir batch'te toplam **2N paralel LLM çağrısı** (N=batch). Aynı repo için s
 - `base` (opsiyonel) — varsayılan `http://localhost:3000`. Prod için Vercel URL'i.
 - `batch` (opsiyonel) — varsayılan 4. Max paralel request sayısı.
 
+
+## Adım 0 — Token'ı bir kez yükle (ZORUNLU)
+
+Yazma yapan endpoint'ler `Authorization: Bearer $INGEST_TOKEN` ister. Token'ı her
+komutta elle girmene gerek yok; akışın başında **bir kez** yükle:
+
+```bash
+# .env.local varsa oradan, yoksa shell ortamından
+set -a
+[ -f "$CLAUDE_PROJECT_DIR/apps/web/.env.local" ] && . "$CLAUDE_PROJECT_DIR/apps/web/.env.local"
+set +a
+: "${INGEST_TOKEN:?INGEST_TOKEN yok — apps/web/.env.local'a ekle ya da export et}"
+: "${EVALUATOR_API_BASE:=https://hackathon-evaluator-eta.vercel.app}"
+```
+
+Bundan sonra terminalden tetikleme eskisi gibi çalışır — tüm curl'ler bu
+değişkeni kullanır. Token yanlışsa endpoint 401, sunucuda hiç tanımlı değilse
+503 döner; mesaj ne yapacağını söyler.
+
 ## Algoritma
 
 ### 1. Pending'leri al
@@ -30,6 +49,7 @@ Boşsa: "Kuyruk boş, çıkıyorum." → BIT.
 Her request için ayrı PATCH (compare-and-swap):
 ```bash
 curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"status":"processing","expectFromStatus":"pending"}'
 ```
@@ -82,20 +102,26 @@ Per takım:
 - Agent: `developer` (general-purpose) — `agents/developer.md` → `clean-code`
 - Agent: `reviewer` (general-purpose) — `agents/reviewer.md` → `architecture`
 
-> **KRİTİK:** Hepsi TEK mesaj. 2N Agent call paralel başlar. developer/reviewer agent-state'leri running→done PATCH'lenir (script orchestrator'dan).
+> **KRİTİK:** Hepsi TEK mesaj. 2N Agent call paralel başlar.
+>
+> **Agent prompt'una curl KOYMA** — durum PATCH'lerini orchestrator atar (agent'ları
+> göndermeden önce `running`, döndükten sonra `done`+score). Sub-agent içindeki her tool
+> call bir tam model turudur; ayrıca agent'ın shell'i `$INGEST_TOKEN`'ı görmez.
 
 > Eski analist/ai-evidence/tester agent'ları **artık çağrılmaz** — script onların yerini aldı.
 
 ### 6. Sonuçları topla ve POST et
 Her takım için 7 madde'yi aggregate et (5 script + 2 LLM), total hesapla. Sonra her takım için ayrı POST:
 ```bash
-curl -X POST "$BASE/api/evaluations" -d @payload_$i.json
+curl -X POST "$BASE/api/evaluations" -d @payload_$i.json \
+  -H "Authorization: Bearer $INGEST_TOKEN"
 ```
 Dönen `id`'yi sakla.
 
 ### 7. Her request'i mark done
 ```bash
 curl -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
   -d "{\"status\":\"done\",\"evaluationId\":\"$EVAL_ID\"}"
 ```
 

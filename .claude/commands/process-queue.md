@@ -6,6 +6,25 @@ Bekleyen `eval_requests`'i kuyruktan al, **batch=4 paralel**, her biri için 5 k
 - `base` — varsayılan `http://localhost:3000`
 - `batch` — varsayılan 4
 
+
+## Adım 0 — Token'ı bir kez yükle (ZORUNLU)
+
+Yazma yapan endpoint'ler `Authorization: Bearer $INGEST_TOKEN` ister. Token'ı her
+komutta elle girmene gerek yok; akışın başında **bir kez** yükle:
+
+```bash
+# .env.local varsa oradan, yoksa shell ortamından
+set -a
+[ -f "$CLAUDE_PROJECT_DIR/apps/web/.env.local" ] && . "$CLAUDE_PROJECT_DIR/apps/web/.env.local"
+set +a
+: "${INGEST_TOKEN:?INGEST_TOKEN yok — apps/web/.env.local'a ekle ya da export et}"
+: "${EVALUATOR_API_BASE:=https://hackathon-evaluator-eta.vercel.app}"
+```
+
+Bundan sonra terminalden tetikleme eskisi gibi çalışır — tüm curl'ler bu
+değişkeni kullanır. Token yanlışsa endpoint 401, sunucuda hiç tanımlı değilse
+503 döner; mesaj ne yapacağını söyler.
+
 ## Akış
 
 ### 1. Pending'leri al
@@ -19,16 +38,21 @@ Boşsa → "Kuyruk boş" yaz, BIT.
 ### 2. Atomic claim her biri için
 ```bash
 curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"status":"processing","expectFromStatus":"pending"}'
 ```
 409 → başkası kapmış, atla.
 
 ### 3. agent_states'i 5 'pending' ile initialize
-Her claimed request için (UI rozetleri için 5 satır — analist/ai-evidence/tester deterministik script tarafından, developer/reviewer LLM tarafından):
+Her claimed request için 5 rozet satırı açılır. `analist`/`ai-evidence`/`tester` rozetleri
+deterministik script bittiğinde orchestrator tarafından `done` işaretlenir (bu isimler
+kriterlerle birebir eşleşmez, yalnız UI rozet etiketidir); `developer`/`reviewer` ise
+LLM agent'ları için:
 ```bash
 for agent in analist developer reviewer ai-evidence tester; do
   curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID/agent-state" \
+    -H "Authorization: Bearer $INGEST_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"agent\":\"$agent\",\"status\":\"pending\"}"
 done
@@ -67,37 +91,50 @@ Bekle, parse et. 5 kriter (docs, readme, ai-evidence, agentic, tests) anında el
 
 ### 6b. **TEK MESAJDA N×2 = 2-8 paralel LLM Agent tool call**
 
-Yalnızca **developer + reviewer**. Prompt template'leri `.claude/skills/evaluate/agents/{developer,reviewer}.md`. **Her sub-agent prompt'unun başına ve sonuna mutlaka şunları ekle:**
+Yalnızca **developer + reviewer**. Prompt template'leri
+`.claude/skills/evaluate/agents/{developer,reviewer}.md`.
 
-#### Başlangıç (her sub-agent prompt'unun ÜSTÜ):
+> **Agent prompt'una curl KOYMA.** Durum PATCH'lerini orchestrator atar:
+> 1. Sub-agent'ın içindeki her tool call bir tam model turudur — 200 ms'lik bir
+>    curl değil. Agent başına 2, takım başına 4, batch=4'te 16 ekstra tur.
+> 2. Agent'ın shell'i `$INGEST_TOKEN`'ı görmez; token'ı prompt'a gömmek onu
+>    sub-agent transcript'ine sızdırır.
+
+#### Agent'ları göndermeden ÖNCE (orchestrator, tek Bash çağrısı)
+```bash
+for REQ_ID in $CLAIMED_IDS; do
+  for agent in developer reviewer; do
+    curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID/agent-state" \
+      -H "Authorization: Bearer $INGEST_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"agent\":\"$agent\",\"status\":\"running\"}" &
+  done
+done
+wait
 ```
-Çalışmaya başlamadan önce bu komutu Bash ile çalıştır:
-curl -s -X PATCH "{BASE}/api/eval-requests/{REQ_ID}/agent-state" \
+
+#### Agent'lar döndükten SONRA (orchestrator, tek Bash çağrısı)
+`clean-code` ve `architecture` skorlarını agent JSON'undan alıp yaz:
+```bash
+curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID/agent-state" \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"agent":"{AGENT_KEY}","status":"running"}'
+  -d "{\"agent\":\"developer\",\"status\":\"done\",\"score\":$CLEAN_CODE_SCORE}"
 ```
-
-#### Bitiş (her sub-agent prompt'unun SONUNA, JSON çıktıdan SONRA):
-```
-JSON çıktıyı verdikten SONRA bu komutu Bash ile çalıştır (SCORE değerini hesapladığın skorla doldur):
-curl -s -X PATCH "{BASE}/api/eval-requests/{REQ_ID}/agent-state" \
-  -H "Content-Type: application/json" \
-  -d '{"agent":"{AGENT_KEY}","status":"done","score":SCORE}'
-```
-
-> NOT: analist ve ai-evidence agent'ları 2 kriter üretir; PATCH'te 2 kriterin skorlarının ortalaması veya bir özet değer kullanılabilir. Veya iki ayrı PATCH (agent: 'analist-docs', 'analist-readme'). En sade: agent kendi `{AGENT_KEY}` ile tek PATCH atar, score alanına ilk kriterin puanını yazar.
 
 **KRİTİK:** 2-8 LLM Agent call TEK asistan mesajında — paralel.
 
 ### 7. Aggregate + POST evaluation
 Her takım için 7 madde'yi topla (5 script + 2 LLM), ayrı POST:
 ```bash
-curl -s -X POST "$BASE/api/evaluations" -d @payload_$i.json
+curl -s -X POST "$BASE/api/evaluations" -d @payload_$i.json \
+  -H "Authorization: Bearer $INGEST_TOKEN"
 ```
 
 ### 8. Request'i done işaretle
 ```bash
 curl -s -X PATCH "$BASE/api/eval-requests/$REQ_ID" \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
   -d "{\"status\":\"done\",\"evaluationId\":\"$EVAL_ID\"}"
 ```
 
@@ -121,5 +158,6 @@ Her dakika fire → boşsa exit, pending varsa batch.
 
 ## Notlar
 - agent_states sayesinde frontend her sub-agent'ın canlı durumunu görür
-- Sub-agent başlangıç/bitiş PATCH'leri ~200ms ek yük (toplam ~%1 yavaşlama)
+- Durum PATCH'leri orchestrator'dan atılır; agent prompt'una curl konmaz
+  (agent içindeki her tool call bir model turu — takım başına 4 tur tasarrufu)
 - Compare-and-swap claim ile aynı request iki kez işlenmez
