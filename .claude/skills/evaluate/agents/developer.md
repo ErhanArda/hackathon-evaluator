@@ -68,6 +68,13 @@ Bakılan boyutlar (her biri 0–2.8 puan, toplam max 14 — en yakın tam sayıy
 
 **Sadece JSON** (kod fence yok):
 
+> **DİL — ZORUNLU:** `rationale` ve tüm `evidence[].note` alanları **Türkçe**
+> yazılmalı. Bu metin doğrudan jüri ekranına düşüyor. Teknik terimler
+> (`any`, `contextIsolation`, `strict`, dosya/fonksiyon adları) İngilizce
+> kalabilir, cümleler Türkçe olmalı. Ölçümde 4 koşunun 2'si İngilizce
+> döndürdü — bu sözleşme ihlalidir.
+
+
 ```json
 [
   {

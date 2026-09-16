@@ -7,10 +7,24 @@ Jüri ve katılımcılar için: takım reposunun nasıl puanlandığı, süreç 
 Her takımın GitHub reposu **7 kriter** üzerinden **100 puan** üzerinden değerlendirilir. Değerlendirme iki katmanlıdır:
 
 - **5 kriter** (`docs`, `readme`, `ai-evidence`, `agentic`, `tests`) → **deterministik** olarak hesaplanır. Bash + regex + dosya/git kontrolü. Aynı repo her zaman aynı puanı alır.
-- **2 kriter** (`clean-code`, `architecture`) → **AI sub-agent** ile değerlendirilir (Claude Sonnet 4.6, context7 MCP destekli). Kod kalitesi yargısı gerektirir; ±1-2 puanlık tabii varyans olabilir.
+- **2 kriter** (`clean-code`, `architecture`) → **AI sub-agent** ile değerlendirilir (context7 MCP destekli). Kod kalitesi yargısı gerektirir.
 
 **Süre:** Takım başına ~90 saniye (klon + script + paralel 2 sub-agent).
-**Tutarlılık:** Aynı SHA, aynı sonuç. Toplam ±2 puan varyans LLM kriterlerinden gelir.
+**Tutarlılık:** Aynı SHA, aynı deterministik sonuç — 5 kriterlik 72 puanlık katman
+%100 tekrarlanabilir (göreli/mutlak yol farkıyla birebir aynı çıktı doğrulandı).
+
+LLM'e kalan 28 puanın varyansı **ölçüldü**: aynı repo (`adjent`, TypeScript/Electron
+monorepo) üzerinde `clean-code` kriteri 4 kez bağımsız koşturuldu →
+**12/14, 12/14, 12/14, 12/14 — varyans 0 puan.** Agent'ların harcadığı tool call
+sayısı 7 ile 12 arasında değişmesine rağmen skor sabit kaldı ve bulgular örtüştü
+(aynı uzun fonksiyonlar, aynı eksik lint konfigürasyonu, aynı Electron
+sertleştirmesi).
+
+> Kapsam uyarısı: bu ölçüm tek repo ve tek kriter üzerinde, n=4. Net bir vakada
+> (açıkça iyi kod + net zayıflıklar) varyans sıfır çıktı; sınırda bir repoda daha
+> yüksek olabilir. Bir takımın skoru tartışmalıysa jüri aynı repoyu yeniden
+> değerlendirebilir — deterministik 72 puan zaten değişmez, yalnız 28 puanlık
+> yargı katmanı yeniden hesaplanır.
 
 ## Akış
 
