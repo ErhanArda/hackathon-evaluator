@@ -1,8 +1,15 @@
 {
   "mcpServers": {
     "context7": {
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"]
+      "command": "/Users/TCERARDA/.nvm/versions/node/v24.21.0/bin/npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {
+        "PATH": "/Users/TCERARDA/.nvm/versions/node/v24.21.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "NODE_EXTRA_CA_CERTS": "/Users/TCERARDA/.claude-corp/corp-ca.pem"
+      }
     }
   }
 }
