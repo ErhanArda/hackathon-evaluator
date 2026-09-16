@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,7 +36,7 @@ export default function RootLayout({
             </a>
             <nav className="flex gap-4 text-sm">
               <a href="/" className="text-slate-600 hover:text-slate-900">Leaderboard</a>
-              <a href="/api/export.xlsx" className="text-slate-600 hover:text-slate-900">Excel</a>
+              <ExcelDownloadButton variant="nav" />
               <a href="/admin" className="text-slate-600 hover:text-slate-900">Admin</a>
             </nav>
           </div>

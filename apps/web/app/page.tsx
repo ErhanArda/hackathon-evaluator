@@ -1,6 +1,7 @@
 import { LeaderboardTable } from "@/components/LeaderboardTable";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { SetupBanner } from "@/components/SetupBanner";
+import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
 import { getLeaderboard } from "@/lib/queries";
 import { isDbConfigured } from "@/lib/db";
 
@@ -35,12 +36,7 @@ export default async function Home() {
             {rows.length} takım kayıtlı · {evaluated} değerlendirme tamamlandı · 5 sn'de bir yenilenir
           </p>
         </div>
-        <a
-          href="/api/export.xlsx"
-          className="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-700"
-        >
-          📊 Excel indir
-        </a>
+        <ExcelDownloadButton />
       </div>
       <LeaderboardTable rows={rows} />
     </div>
