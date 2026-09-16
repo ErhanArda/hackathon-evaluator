@@ -106,6 +106,99 @@ const TRACKED = (() => gitRaw("ls-files", "-z").split("\0").filter(Boolean))();
 
 const readme = readSafe("README.md") || readSafe("readme.md") || readSafe("Readme.md");
 
+// ---------- şablon/placeholder farkındalığı ----------
+// Şablon repolarında başlık dolu, altı boş: `## MCP Sunucu Listesi` +
+// `- *[kullanılan MCP sunucuları buraya]*`. Eski sürüm başlığı ve örnek
+// metni gerçek beyan sayıp puan veriyordu (bir ölçümde readme 6/14'ün
+// 5.6'sı tamamen boş şablondan geliyordu). Ayrıca çıplak `\bmcp\b` testi,
+// MCP'nin bir ders konusu listesinde geçtiği repoda da ✓ veriyordu.
+const PLACEHOLDER_PATTERNS = [
+  /\*+\[[^\]]*\]\*+/g,         // *[buraya yazın]*
+  /\{\{[^}]*\}\}/g,            // {{mustache}}
+  /<[a-zçğıöşü0-9_\-. ]{2,40}>/gi, // <your-url>, <dosya adı>
+  /_{3,}/g,                    // ____
+  /\bTODO\b|\bTBD\b|\bFIXME\b|\bXXX\b/g,
+];
+
+/** Placeholder metinlerini temizler; markdown link/görselleri korur. */
+function stripPlaceholders(text) {
+  let out = text || "";
+  for (const re of PLACEHOLDER_PATTERNS) out = out.replace(re, " ");
+  // Markdown linki OLMAYAN köşeli parantezler: `[foo]` gider, `[foo](bar)` kalır.
+  out = out.replace(/\[[^\]\n]{0,160}\](?!\s*[(\[])/g, " ");
+  return out;
+}
+
+/** Markdown başlık satırlarını çıkarır — başlık beyan değildir. */
+function stripHeadings(text) {
+  return (text || "").replace(/^[ \t]{0,3}#{1,6}[^\n]*$/gm, " ");
+}
+
+/**
+ * Kod bloklarını ve inline kod'u çıkarır. README'deki "Proje Yapısı" dosya
+ * ağacında `CLAUDE.md` geçmesi, AI aracı BEYANI değildir — bu yüzden beyan
+ * testlerinde kod blokları sayılmaz. (Kurulum/env boyutu ham README'ye
+ * baktığı için install komutlarından etkilenmez.)
+ */
+function stripCode(text) {
+  return (text || "")
+    .replace(/^[ \t]{0,3}(```|~~~)[\s\S]*?^[ \t]{0,3}\1[^\n]*$/gm, " ")
+    .replace(/`[^`\n]*`/g, " ");
+}
+
+/** Başlık + placeholder + kod temizlenmiş gövde: "gerçekten yazılmış" beyan. */
+function declaredText(text) {
+  return stripCode(stripHeadings(stripPlaceholders(text)));
+}
+
+/** Metinde anlamlı içerik kaldı mı (yalnız noktalama/tablo çizgisi değil)? */
+function hasRealContent(text, minChars = 12) {
+  const t = (text || "")
+    .replace(/^\s*\|[\s|:\-]*\|\s*$/gm, " ")  // boş tablo ayıracı
+    .replace(/[|\-–—*_>`#:.,;()\[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return t.length >= minChars;
+}
+
+/**
+ * Başlığa uyan bölümün gövdesini döndürür (bir sonraki aynı/üst seviye
+ * başlığa kadar). Bölüm yoksa null.
+ */
+function sectionBody(text, headingRe) {
+  const lines = (text || "").split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^[ \t]{0,3}(#{1,6})\s+(.*)$/);
+    if (!m || !headingRe.test(m[2])) continue;
+    const level = m[1].length;
+    const body = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const h = lines[j].match(/^[ \t]{0,3}(#{1,6})\s+/);
+      if (h && h[1].length <= level) break;
+      body.push(lines[j]);
+    }
+    return body.join("\n");
+  }
+  return null;
+}
+
+/**
+ * Bir README boyutu için: ilgili başlık varsa gövdesi DOLU olmalı; başlık
+ * yoksa gövdede (placeholder/başlık temizlenmiş) desen geçmeli.
+ * `corroborate` verilirse, başlıksız yolda ek kanıt da şart koşulur.
+ */
+function declaresSection(text, headingRe, contentRe, corroborate = true) {
+  const body = sectionBody(text, headingRe);
+  if (body !== null) {
+    const filled = stripPlaceholders(body);
+    if (hasRealContent(filled) && contentRe.test(filled)) return true;
+    // Başlık var ama gövde boş/placeholder → beyan yok.
+    if (!hasRealContent(filled)) return false;
+  }
+  const declared = declaredText(text);
+  return contentRe.test(declared) && corroborate;
+}
+
 const SKIP_PATH = /(^|\/)(node_modules|\.next|dist|build|out|vendor|coverage|\.venv|venv|__pycache__|target|\.turbo|\.svelte-kit|\.nuxt|Pods)(\/|$)/i;
 
 // ---------- manifest toplama (monorepo dahil) ----------
@@ -176,13 +269,14 @@ function scoreDocs() {
   // Bir doküman "sayılması" için içerik taşımalı — 3 adet 2-byte placeholder
   // dosya eskiden 12/14 alıyordu.
   const SUBSTANTIVE = 500;
-  const withContent = docFiles.map((f) => ({ f, c: readSafe(f) }));
-  const substantive = withContent.filter((x) => x.c.length >= SUBSTANTIVE);
+  // Byte sayımı placeholder'ı saymaz: saf şablon bir doküman değildir.
+  const withContent = docFiles.map((f) => ({ f, c: readSafe(f), real: stripPlaceholders(readSafe(f)).trim() }));
+  const substantive = withContent.filter((x) => x.real.length >= SUBSTANTIVE);
 
   evidence.push({
     path: `${docDir}/`,
     lines: null,
-    note: `${docFiles.length} markdown (alt klasörler dahil), ${substantive.length} tanesi ≥${SUBSTANTIVE} byte: ${substantive.slice(0, 8).map((x) => `${basename(x.f)}=${x.c.length}b`).join(", ") || "yok"}`,
+    note: `${docFiles.length} markdown (alt klasörler dahil), ${substantive.length} tanesi ≥${SUBSTANTIVE} byte: ${substantive.slice(0, 8).map((x) => `${basename(x.f)}=${x.real.length}b`).join(", ") || "yok"}`,
   });
 
   const hasIn = (re) => substantive.some((x) => re.test(basename(x.f)));
@@ -196,7 +290,7 @@ function scoreDocs() {
   // Yapısal kalite bonusu (0-3): ortalama byte yerine gerçek yapı. Eski
   // "ortalama <300 byte → -2" kuralı tek büyük dosya eklenerek bypass
   // ediliyordu.
-  const allDocText = substantive.map((x) => x.c).join("\n");
+  const allDocText = substantive.map((x) => x.c).join("\n");  // yapı bonusu ham metinden
   const headings = (allDocText.match(/^#{1,6}\s+\S/gm) || []).length;
   const codeBlocks = Math.floor((allDocText.match(/^```/gm) || []).length / 2);
   const tables = (allDocText.match(/^\|.+\|\s*$/gm) || []).length;
@@ -229,8 +323,21 @@ function scoreReadme() {
   }
   const dims = [];
 
-  dims.push({ name: "AI tool listesi", got: /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|windsurf|codeium|ai tools? used|ai-?assist)/i.test(readme) });
-  dims.push({ name: "MCP listesi", got: /\bmcp\b/i.test(readme) || /model context protocol/i.test(readme) });
+  // Başlık + placeholder farkındalığı: `*[örn. Claude Code]*` bir beyan
+  // değildir, `## MCP Sunucu Listesi` başlığı da tek başına yeterli değildir.
+  const AI_TOOL_RE = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|windsurf|codeium|ai tools? used|ai-?assist)/i;
+  const MCP_RE = /\bmcp\b|model context protocol/i;
+  const MCP_CONFIG_FILES = [
+    ".mcp.json", "mcp.json", "claude_desktop_config.json", ".cursor/mcp.json",
+    ".codex/mcp.json", ".gemini/mcp.json", ".continue/mcp.json",
+    ".windsurf/mcp.json", ".vscode/mcp.json",
+  ];
+  const hasMcpConfig = MCP_CONFIG_FILES.some((f) => exists(f));
+
+  dims.push({ name: "AI tool listesi", got: declaresSection(readme, /ai|yapay zek|tool|ara[çc]|model/i, AI_TOOL_RE) });
+  // MCP'de başlıksız yol ek kanıt ister: repoda gerçek bir MCP config'i olmalı.
+  // Aksi halde "MCP" kelimesinin bir ders/konu listesinde geçmesi ✓ veriyordu.
+  dims.push({ name: "MCP listesi", got: declaresSection(readme, MCP_RE, MCP_RE, hasMcpConfig) });
 
   const deployUrls = findDeployUrls();
   dims.push({ name: "Deploy URL", got: deployUrls.length > 0 });
@@ -293,10 +400,11 @@ function scoreAiEvidence() {
   evidence.push({ path: "AI config", lines: null, note: aiConfigFound.length > 0 ? `bulunan: ${aiConfigFound.join(", ")}` : "yok" });
 
   const aiToolRe = /(claude(?:\s*code)?|cursor|copilot|codex|gemini|chatgpt|anthropic|openai|aider|continue\.dev|windsurf|codeium|devin|tabnine|jetbrains\s*ai|zed\s*ai|ai\s+tools?\s+used|ai-?assist)/i;
-  const aiToolInReadme = aiToolRe.test(readme);
+  // Placeholder farkındalığı: `*[örn. Claude Code]*` beyan sayılmaz.
+  const aiToolInReadme = aiToolRe.test(declaredText(readme));
   const docDir = ["docs", "doc", "documentation"].find((d) => exists(d));
   const aiToolInDocs = docDir
-    ? walk(docDir, 3).some((f) => /\.mdx?$/i.test(f) && aiToolRe.test(readSafe(rel(f))))
+    ? walk(docDir, 3).some((f) => /\.mdx?$/i.test(f) && aiToolRe.test(declaredText(readSafe(rel(f)))))
     : false;
   const aiToolMatch = aiToolInReadme || aiToolInDocs;
   evidence.push({ path: "README.md + docs/", lines: null, note: aiToolMatch ? `AI tool listesi var${aiToolInDocs && !aiToolInReadme ? " (docs/ içinde)" : ""}` : "AI tool listesi yok" });
@@ -305,7 +413,8 @@ function scoreAiEvidence() {
   const contextFiles = [];
   for (const p of contextFileNames) {
     const c = readSafe(p);
-    if (c.length > 0) contextFiles.push({ path: p, len: c.length });
+    // Gerçek içerik byte'ı: doldurulmamış şablon bir context dosyası değildir.
+    if (c.length > 0) contextFiles.push({ path: p, len: stripPlaceholders(c).trim().length });
   }
   if (docDir) {
     for (const p of contextFileNames) {
@@ -315,7 +424,7 @@ function scoreAiEvidence() {
     for (const abs of walk(docDir, 2)) {
       const b = basename(abs);
       if (/^ai[_-]/i.test(b) && /\.mdx?$/i.test(b)) {
-        const c = readSafe(rel(abs));
+        const c = stripPlaceholders(readSafe(rel(abs))).trim();
         if (c.length > 200) contextFiles.push({ path: rel(abs), len: c.length });
       }
     }
